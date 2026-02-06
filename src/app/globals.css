@@ -1,0 +1,74 @@
+@import "tailwindcss";
+
+/* Clean, simple UI with Google-inspired highlight colors */
+:root {
+  --background: #ffffff;
+  --foreground: #202124;
+  --card-bg: #ffffff;
+  --border: #dadce0;
+  --accent: #1a73e8;
+  --accent-hover: #1765cc;
+  --secondary-text: #5f6368;
+  --positive: #1e8e3e;
+  --negative: #d93025;
+  --chart-blue: #4285f4;
+  --chart-red: #ea4335;
+  --chart-yellow: #fbbc04;
+  --chart-green: #34a853;
+  /* Apple-style soft shadows & pill bg */
+  --pill-bg: #f1f3f4;
+  --pill-active: #ffffff;
+  --pill-active: #ffffff;
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.04);
+  --shadow-md: 0 2px 8px rgba(0, 0, 0, 0.06);
+  --shadow-lg: 0 4px 16px rgba(0, 0, 0, 0.08);
+  --shadow-tooltip: 0 4px 12px rgba(0, 0, 0, 0.08);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #202124;
+    --foreground: #e8eaed;
+    --card-bg: #292a2d;
+    --border: #5f6368;
+    --accent: #8ab4f8;
+    --accent-hover: #aecbfa;
+    --secondary-text: #9aa0a6;
+    --positive: #81c995;
+    --negative: #f28b82;
+    --chart-blue: #8ab4f8;
+    --chart-red: #f28b82;
+    --chart-yellow: #fdd663;
+    --chart-green: #81c995;
+  --pill-bg: #3c4043;
+  --pill-active: #5f6368;
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.12);
+  --shadow-md: 0 2px 8px rgba(0, 0, 0, 0.15);
+  --shadow-lg: 0 4px 16px rgba(0, 0, 0, 0.18);
+  --shadow-tooltip: 0 4px 12px rgba(0, 0, 0, 0.15);
+  }
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card-bg);
+  --color-border: var(--border);
+  --color-accent: var(--accent);
+  --color-secondary: var(--secondary-text);
+  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Helvetica Neue", Helvetica, Arial, sans-serif;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+* {
+  font-family: inherit;
+}
