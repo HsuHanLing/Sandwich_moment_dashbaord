@@ -619,6 +619,12 @@ export default function DashboardPage() {
           },
           growthFunnel,
           retention,
+          userAttributes,
+          geoDistribution,
+          creatorSupply,
+          monetization,
+          economyHealth,
+          contentFeed,
         } as DashboardContext}
       />
     </div>

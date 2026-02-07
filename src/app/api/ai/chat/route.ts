@@ -38,6 +38,30 @@ D1/D3/D7/D14 retention rates with WoW comparison
 - Client/Platform: Android / iOS / Web
 - User Dimension: All / New Users / Old Users / Returning (7+ days inactive then came back)
 
+**User Attributes:**
+- Age Distribution: user age groups and their share
+- Device Type: mobile, desktop, tablet breakdown
+
+**Geographic Distribution:**
+- Top regions/countries by user count and share percentage
+
+**Creator & Supply:**
+- Active creators (Total, KOL, Regular), new KOL creators (7d)
+- Weekly earnings breakdown: KOL vs Regular creator earnings
+- KOL = Key Opinion Leader / top-tier creators
+
+**Monetization Breakdown:**
+- Revenue by stream (e.g., in-app purchase, ads, subscriptions)
+- Share percentage and ROI per stream
+
+**Economy Health:**
+- Key economic indicators: token balance, circulation, inflation rate, etc.
+- Health status labels for each indicator
+
+**Content & Feed Performance:**
+- Three feed sections: Circle, Feature Cards, Exclusives
+- Metrics per area: impressions, CTR (click-through rate), completion rate, replay rate
+
 **Data source:** Google Analytics 4 (GA4) → BigQuery. Updated daily.
 
 Guidelines:
@@ -110,6 +134,102 @@ function buildDataContext(data: Record<string, unknown>): string {
       parts.push("\n## Retention Rates");
       for (const r of chart) {
         parts.push(`- ${r.day}: ${r.rate}% (WoW: ${Number(r.wow) >= 0 ? "+" : ""}${r.wow}pp)`);
+      }
+    }
+  }
+
+  // User Attributes
+  const ua = data.userAttributes as Record<string, unknown> | undefined;
+  if (ua) {
+    const age = (ua.age as Record<string, unknown>[]) || [];
+    const device = (ua.device as Record<string, unknown>[]) || [];
+    if (age.length > 0) {
+      parts.push("\n## User Attributes — Age Distribution");
+      for (const a of age) {
+        parts.push(`- ${a.attr}: ${num(a.users)} users (${a.share}%)`);
+      }
+    }
+    if (device.length > 0) {
+      parts.push("\n## User Attributes — Device Type");
+      for (const d of device) {
+        parts.push(`- ${d.attr}: ${num(d.users)} users (${d.share}%)`);
+      }
+    }
+  }
+
+  // Geographic Distribution
+  const geo = data.geoDistribution as Record<string, unknown>[] | undefined;
+  if (geo && geo.length > 0) {
+    parts.push("\n## Geographic Distribution (Top regions)");
+    parts.push("| Region | Users | Share |");
+    parts.push("|--------|-------|-------|");
+    for (const g of geo.slice(0, 15)) {
+      parts.push(`| ${g.region_name || g.region} | ${num(g.users)} | ${g.share}% |`);
+    }
+  }
+
+  // Creator & Supply
+  const cs = data.creatorSupply as Record<string, unknown> | undefined;
+  if (cs) {
+    const metrics = (cs.metrics as Record<string, number>) || {};
+    const weekly = (cs.weekly as Record<string, unknown>[]) || [];
+    if (Object.keys(metrics).length > 0) {
+      parts.push("\n## Creator & Supply Metrics");
+      for (const [k, v] of Object.entries(metrics)) {
+        parts.push(`- ${k}: ${typeof v === "number" ? num(v) : v}`);
+      }
+    }
+    if (weekly.length > 0) {
+      parts.push("\n### Weekly Creator Earnings");
+      for (const w of weekly) {
+        parts.push(`- ${w.week}: KOL $${num(w.kol_earnings)}, Regular $${num(w.regular_earnings)}`);
+      }
+    }
+  }
+
+  // Monetization
+  const mon = data.monetization as Record<string, unknown>[] | undefined;
+  if (mon && mon.length > 0) {
+    parts.push("\n## Monetization Breakdown");
+    parts.push("| Revenue Stream | Revenue | Share | ROI |");
+    parts.push("|----------------|---------|-------|-----|");
+    for (const m of mon) {
+      parts.push(`| ${m.revenue_stream} | $${num(m.revenue)} | ${m.share}% | ${m.roi} |`);
+    }
+  }
+
+  // Economy Health
+  const eh = data.economyHealth as Record<string, unknown> | undefined;
+  if (eh) {
+    const metrics = (eh.metrics as Record<string, unknown>[]) || [];
+    const chart = (eh.chart as Record<string, unknown>[]) || [];
+    if (metrics.length > 0) {
+      parts.push("\n## Economy Health Metrics");
+      for (const m of metrics) {
+        parts.push(`- ${m.indicator}: ${m.value}`);
+      }
+    }
+    if (chart.length > 0) {
+      parts.push("\n### Economy Health Indicators");
+      for (const c of chart) {
+        parts.push(`- ${c.indicator}: ${c.value} (${c.label})`);
+      }
+    }
+  }
+
+  // Content & Feed Performance
+  const cf = data.contentFeed as Record<string, unknown> | undefined;
+  if (cf) {
+    const sections: [string, string][] = [["circle", "Circle"], ["featureCards", "Feature Cards"], ["exclusives", "Exclusives"]];
+    for (const [key, label] of sections) {
+      const items = (cf[key] as Record<string, unknown>[]) || [];
+      if (items.length > 0) {
+        parts.push(`\n## Content & Feed — ${label}`);
+        parts.push("| Area | Impressions | CTR | Completion | Replay |");
+        parts.push("|------|-------------|-----|------------|--------|");
+        for (const item of items) {
+          parts.push(`| ${item.area} | ${num(item.impressions)} | ${item.ctr}% | ${item.completion ?? "—"} | ${item.replay ?? "—"} |`);
+        }
       }
     }
   }
