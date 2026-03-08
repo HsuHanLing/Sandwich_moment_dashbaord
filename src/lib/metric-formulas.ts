@@ -405,4 +405,37 @@ export const METRIC_FORMULAS: Record<string, { formula: string; description: str
     formula: "COUNT(DISTINCT user_pseudo_id) WHERE event_name = 'first_open' AND traffic_source.source IN ('getit','frog','frogcool','appreferral')",
     description: "New users who installed and opened the app via a referral Dynamic Link (getit.thefr.app or open.frogcool.com). These are users acquired through sharing/invites.",
   },
+  // Health Dashboard
+  HEALTH_REG_RATE: {
+    formula: "(Registered users / First open users) × 100%, 30d",
+    description: "Registration conversion: auth_submit_result or auth_oauth_result success. Denominator: first_open in period.",
+  },
+  HEALTH_UNLOCK_RATE: {
+    formula: "(First unlock users / Registered users) × 100%, 30d",
+    description: "First unlock: video_unlock_success or dollarsup_first_unlock_success. Denominator: registered in period.",
+  },
+  HEALTH_LOOP_RATE: {
+    formula: "(Users with 2+ unlocks / Total unlock users) × 100%, 30d",
+    description: "Unlock loop: users who unlocked at least twice. Denominator: all users with at least one unlock.",
+  },
+  HEALTH_SHARE_RATE: {
+    formula: "(Scratch share users / Scratch users) × 100%, 30d",
+    description: "Share after cashout: scratch_share_click users / users who completed scratch (scratch_reward_grant_result).",
+  },
+  HEALTH_REFERRAL_WEEK: {
+    formula: "COUNT(DISTINCT user_pseudo_id) first_open via referral/dynamic link, last 7 days",
+    description: "North Star. New registrations per week from referral or sharing (traffic_source getit/frog/frogcool/referral).",
+  },
+  HEALTH_D7_UNLOCK: {
+    formula: "(Unlock cohort retained on D7 / Unlock cohort size) × 100%",
+    description: "Unlock user D7 retention: users who first unlocked 7+ days ago and had activity on D7.",
+  },
+  HEALTH_PAY_RATE: {
+    formula: "(Payers / Active users) × 100%, 30d",
+    description: "Payment conversion: iap_success or purchase. Denominator: total active users in period.",
+  },
+  HEALTH_MONTHLY_REVENUE: {
+    formula: "SUM(event_value_in_usd) WHERE event_name IN ('purchase','in_app_purchase','app_store_subscription_convert','app_store_subscription_renew'), 30d",
+    description: "Total revenue in the last 30 days from in-app and subscription purchases.",
+  },
 };

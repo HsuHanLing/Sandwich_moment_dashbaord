@@ -22,6 +22,7 @@ import { AIInsightsSection } from "@/components/AIInsightsSection";
 import { FlywheelSection } from "@/components/FlywheelSection";
 import { ShareDataSection } from "@/components/ShareDataSection";
 import { ReferralRewardSection } from "@/components/ReferralRewardSection";
+import { FlywheelHealthDashboard } from "@/components/FlywheelHealthDashboard";
 import { useLocale } from "@/contexts/LocaleContext";
 
 type KPI = {
@@ -529,6 +530,10 @@ export default function DashboardPage() {
             </div>
           </div>
         </section>
+
+        {/* Flywheel Health Dashboard */}
+        <FlywheelHealthDashboard t={t} />
+
           </>
         )}
 
