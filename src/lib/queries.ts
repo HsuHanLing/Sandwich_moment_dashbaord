@@ -191,7 +191,15 @@ export function getCampaignsQuery(days: number = 30, limit: number = 20) {
   `;
 }
 
-// KPI Snapshot - D1 by return date (yesterday's cohort who returned today)
+// Registration events: same as registration_daily (excl. HK/CN/SG)
+const REG_EVENTS = `(
+  event_name IN ('Success_GoogleRegister','Register_Number_Success','Register_Email_Success','Success_AppleRegister')
+  OR (event_name = 'auth_oauth_result'
+    AND EXISTS (SELECT 1 FROM UNNEST(event_params) ep WHERE ep.key = 'result' AND ep.value.string_value = 'success'))
+)`;
+const REG_GEO = `geo.country NOT IN ('Hong Kong', 'China', 'Singapore')`;
+
+// KPI Snapshot - D1 by registration cohort, return date (yesterday's registrants who returned today)
 export function getKPIAndWowQuery(mode: "today" | "7d" | "30d", filters?: OverviewFilters) {
   const days = mode === "today" ? 8 : mode === "7d" ? 14 : 60;
   const extra = filterClause(filters, days);
@@ -209,21 +217,32 @@ export function getKPIAndWowQuery(mode: "today" | "7d" | "30d", filters?: Overvi
       WHERE ${tableFilter(days)}${extra}
       GROUP BY 1, 2
     ),
+    registration_daily AS (
+      SELECT
+        FORMAT_DATE('%Y-%m-%d', PARSE_DATE('%Y%m%d', event_date)) as date,
+        COUNT(DISTINCT user_pseudo_id) as registration
+      FROM \`${dataset()}.${table()}\`
+      WHERE ${tableFilter(days)}${extra} AND ${REG_GEO} AND ${REG_EVENTS}
+      GROUP BY event_date
+    ),
+    reg_users AS (
+      SELECT user_pseudo_id, MIN(PARSE_DATE('%Y%m%d', event_date)) as first_reg_dt
+      FROM \`${dataset()}.${table()}\`
+      WHERE _TABLE_SUFFIX >= FORMAT_DATE('%Y%m%d', DATE_SUB(CURRENT_DATE(), INTERVAL ${days + 7} DAY))
+        AND PARSE_DATE('%Y%m%d', event_date) >= DATE_SUB(CURRENT_DATE(), INTERVAL ${days + 7} DAY)
+        AND ${REG_GEO} AND ${REG_EVENTS}${extra}
+      GROUP BY 1
+    ),
     d1_cohort AS (
       SELECT
-        FORMAT_DATE('%Y-%m-%d', DATE_ADD(s.signup_dt, INTERVAL 1 DAY)) as return_date,
-        COUNT(DISTINCT s.user_pseudo_id) as retained_d1
-      FROM (
-        SELECT user_pseudo_id, MIN(PARSE_DATE('%Y%m%d', event_date)) as signup_dt
-        FROM \`${dataset()}.${table()}\`
-        WHERE ${tableFilter(days)} AND event_name = 'first_open'
-        GROUP BY 1
-      ) s
+        FORMAT_DATE('%Y-%m-%d', DATE_ADD(r.first_reg_dt, INTERVAL 1 DAY)) as return_date,
+        COUNT(DISTINCT r.user_pseudo_id) as retained_d1
+      FROM reg_users r
       JOIN \`${dataset()}.${table()}\` b
-        ON s.user_pseudo_id = b.user_pseudo_id
-        AND PARSE_DATE('%Y%m%d', b.event_date) = DATE_ADD(s.signup_dt, INTERVAL 1 DAY)
-      WHERE _TABLE_SUFFIX >= FORMAT_DATE('%Y%m%d', DATE_SUB(CURRENT_DATE(), INTERVAL ${days} DAY))
-        AND PARSE_DATE('%Y%m%d', b.event_date) >= DATE_SUB(CURRENT_DATE(), INTERVAL ${days} DAY)
+        ON r.user_pseudo_id = b.user_pseudo_id
+        AND PARSE_DATE('%Y%m%d', b.event_date) = DATE_ADD(r.first_reg_dt, INTERVAL 1 DAY)
+      WHERE _TABLE_SUFFIX >= FORMAT_DATE('%Y%m%d', DATE_SUB(CURRENT_DATE(), INTERVAL ${days + 7} DAY))
+        AND PARSE_DATE('%Y%m%d', b.event_date) >= DATE_SUB(CURRENT_DATE(), INTERVAL ${days} DAY)${extra}
       GROUP BY 1
     )
     SELECT
@@ -235,8 +254,9 @@ export function getKPIAndWowQuery(mode: "today" | "7d" | "30d", filters?: Overvi
       d.revenue,
       d.unlock_users,
       c.retained_d1,
-      LAG(d.new_users) OVER (ORDER BY d.dt) as prev_day_new_users
+      LAG(COALESCE(r.registration, 0)) OVER (ORDER BY d.dt) as prev_day_registrations
     FROM daily d
+    LEFT JOIN registration_daily r ON r.date = d.date_str
     LEFT JOIN d1_cohort c ON c.return_date = d.date_str
     ORDER BY d.dt DESC
   `;
@@ -271,13 +291,7 @@ export function getDailyTrendQuery(days: number = 7, filters?: OverviewFilters) 
         FORMAT_DATE('%Y-%m-%d', PARSE_DATE('%Y%m%d', event_date)) as date,
         COUNT(DISTINCT user_pseudo_id) as registration
       FROM \`${dataset()}.${table()}\`
-      WHERE ${tableFilter(days)}${extra}
-        AND geo.country NOT IN ('Hong Kong', 'China', 'Singapore')
-        AND (
-          event_name IN ('Success_GoogleRegister','Register_Number_Success','Register_Email_Success','Success_AppleRegister')
-          OR (event_name = 'auth_oauth_result'
-            AND EXISTS (SELECT 1 FROM UNNEST(event_params) ep WHERE ep.key = 'result' AND ep.value.string_value = 'success'))
-        )
+      WHERE ${tableFilter(days)}${extra} AND ${REG_GEO} AND ${REG_EVENTS}
       GROUP BY event_date
     ),
     unlock_ge2_daily AS (
@@ -295,30 +309,29 @@ export function getDailyTrendQuery(days: number = 7, filters?: OverviewFilters) 
       )
         GROUP BY 1
     ),
-    signups AS (
-      SELECT user_pseudo_id,
-        MIN(PARSE_DATE('%Y%m%d', event_date)) as signup_dt
+    reg_users AS (
+      SELECT user_pseudo_id, MIN(PARSE_DATE('%Y%m%d', event_date)) as first_reg_dt
       FROM \`${dataset()}.${table()}\`
       WHERE _TABLE_SUFFIX >= FORMAT_DATE('%Y%m%d', DATE_SUB(CURRENT_DATE(), INTERVAL ${lookback} DAY))
         AND PARSE_DATE('%Y%m%d', event_date) >= DATE_SUB(CURRENT_DATE(), INTERVAL ${lookback} DAY)
-        AND event_name = 'first_open'
+        AND ${REG_GEO} AND ${REG_EVENTS}${extra}
       GROUP BY 1
     ),
     d1_cohort AS (
       SELECT
-        FORMAT_DATE('%Y-%m-%d', s.signup_dt) as cohort_date,
-        COUNT(DISTINCT s.user_pseudo_id) as cohort_size,
-        COUNT(DISTINCT CASE WHEN a.user_pseudo_id IS NOT NULL THEN s.user_pseudo_id END) as retained_d1
-      FROM signups s
+        FORMAT_DATE('%Y-%m-%d', r.first_reg_dt) as cohort_date,
+        COUNT(DISTINCT r.user_pseudo_id) as cohort_size,
+        COUNT(DISTINCT CASE WHEN a.user_pseudo_id IS NOT NULL THEN r.user_pseudo_id END) as retained_d1
+      FROM reg_users r
       LEFT JOIN (
         SELECT DISTINCT user_pseudo_id, PARSE_DATE('%Y%m%d', event_date) as dt
         FROM \`${dataset()}.${table()}\`
         WHERE _TABLE_SUFFIX >= FORMAT_DATE('%Y%m%d', DATE_SUB(CURRENT_DATE(), INTERVAL ${lookback} DAY))
-          AND PARSE_DATE('%Y%m%d', event_date) >= DATE_SUB(CURRENT_DATE(), INTERVAL ${lookback} DAY)
-      ) a ON s.user_pseudo_id = a.user_pseudo_id
-        AND a.dt = DATE_ADD(s.signup_dt, INTERVAL 1 DAY)
-      WHERE s.signup_dt >= DATE_SUB(CURRENT_DATE(), INTERVAL ${days} DAY)
-        AND s.signup_dt < DATE_SUB(CURRENT_DATE(), INTERVAL 1 DAY)
+          AND PARSE_DATE('%Y%m%d', event_date) >= DATE_SUB(CURRENT_DATE(), INTERVAL ${lookback} DAY)${extra}
+      ) a ON r.user_pseudo_id = a.user_pseudo_id
+        AND a.dt = DATE_ADD(r.first_reg_dt, INTERVAL 1 DAY)
+      WHERE r.first_reg_dt >= DATE_SUB(CURRENT_DATE(), INTERVAL ${days} DAY)
+        AND r.first_reg_dt < DATE_SUB(CURRENT_DATE(), INTERVAL 1 DAY)
       GROUP BY 1
     )
     SELECT

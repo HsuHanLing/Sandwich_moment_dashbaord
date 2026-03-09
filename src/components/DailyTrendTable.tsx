@@ -102,6 +102,32 @@ function CellWithTooltip({
   );
 }
 
+function D1CellWithTooltip({ d1, d1_detail }: { d1: string; d1_detail?: string | null }) {
+  const [show, setShow] = useState(false);
+  const info = METRIC_FORMULAS["D1_RETENTION"];
+
+  return (
+    <td
+      className="relative px-3 py-2 text-right text-[11px] text-[var(--foreground)]"
+      onMouseEnter={() => setShow(true)}
+      onMouseLeave={() => setShow(false)}
+    >
+      <span className="cursor-help border-b border-dashed border-[var(--border)]">{d1}</span>
+      {d1_detail && <span className="ml-1 text-[9px] text-[var(--secondary-text)]">({d1_detail})</span>}
+      {show && info && (
+        <div
+          className="absolute bottom-full right-0 z-50 mb-1 w-56 rounded-md border border-[var(--border)] bg-[var(--card-bg)] px-2 py-1.5 text-[8px] leading-snug"
+          style={{ boxShadow: "0 1px 4px rgba(0,0,0,0.08)" }}
+        >
+          <p className="font-medium text-[var(--accent)]">{info.formula}</p>
+          <p className="mt-1 text-[var(--secondary-text)]">{info.description}</p>
+          {d1_detail && <p className="mt-1 text-[var(--secondary-text)]">Data: {d1_detail} (retained/cohort)</p>}
+        </div>
+      )}
+    </td>
+  );
+}
+
 export function DailyTrendTable({ data }: { data: Row[] }) {
   const display = data.slice(-7).reverse();
 
@@ -132,12 +158,7 @@ export function DailyTrendTable({ data }: { data: Row[] }) {
               <CellWithTooltip value={formatNum(row.new_users)} metricKey="NEW" />
               <CellWithTooltip value={formatNum(row.registration)} metricKey="DAILY_REGISTRATION" />
               <CellWithTooltip value={formatNum(row.dau)} metricKey="DAU" />
-              <td className="px-3 py-2 text-right text-[11px] text-[var(--foreground)]">
-                <span>{row.d1}</span>
-                {row.d1_detail && (
-                  <span className="ml-1 text-[9px] text-[var(--secondary-text)]">({row.d1_detail})</span>
-                )}
-              </td>
+              <D1CellWithTooltip d1={row.d1} d1_detail={row.d1_detail} />
               <CellWithTooltip value={formatNum(row.unlock_users)} metricKey="UNLOCK_USERS" />
               <CellWithTooltip value={formatNum(row.unlock_ge2)} metricKey="UNLOCK_GE2" />
               <CellWithTooltip value={formatNum(row.payers)} metricKey="PAYERS" />

@@ -8,8 +8,8 @@ export const METRIC_FORMULAS: Record<string, { formula: string; description: str
     description: "Daily Active Users: unique users with activity that day, excluding HK/CN/SG.",
   },
   D1_RETENTION: {
-    formula: "(Users who returned on D1 / New users on D0) × 100%",
-    description: "D1 Retention: % of new users who came back the next day.",
+    formula: "(Users who returned on D1 / Registered users on D0) × 100%",
+    description: "D1 Retention: % of registered users who came back the next day. Cohort: users who completed registration (Google/Apple/Email/Phone or auth_oauth_result success). Excludes HK/CN/SG.",
   },
   PAY_RATE: {
     formula: "(Paying users / DAU) × 100%",

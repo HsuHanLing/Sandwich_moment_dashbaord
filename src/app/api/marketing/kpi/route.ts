@@ -11,8 +11,8 @@ function parseRow(r: Record<string, unknown>) {
   const payers = Number(r.payers ?? 0);
   const revenue = Number(r.revenue ?? 0);
   const retainedD1 = Number(r.retained_d1 ?? 0);
-  const prevDayNewUsers = Number(r.prev_day_new_users ?? 0);
-  const d1Retention = prevDayNewUsers > 0 ? (retainedD1 / prevDayNewUsers) * 100 : 0;
+  const prevDayRegistrations = Number(r.prev_day_registrations ?? 0);
+  const d1Retention = prevDayRegistrations > 0 ? (retainedD1 / prevDayRegistrations) * 100 : 0;
   return { dateStr, dau, newUsers, payers, revenue, d1Retention };
 }
 

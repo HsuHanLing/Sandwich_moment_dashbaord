@@ -49,7 +49,7 @@ export type DashboardContext = {
   userAttributes: { age: { attr: string; users: number; share: number }[]; device: { attr: string; users: number; share: number }[] } | null;
   geoDistribution: { region: string; region_name: string; users: number; share: number }[];
   creatorSupply: { weekly: { week: string; kol_earnings: number; regular_earnings: number }[]; metrics: Record<string, number> } | null;
-  monetization: { revenue_stream: string; revenue: number; share: number; roi: number }[];
+  monetization: { revenue_stream: string; revenue: number; share: number; roi?: number }[];
   economyHealth: { chart: { indicator: string; value: number; label: string }[]; metrics: { indicator: string; value: string }[] } | null;
   contentFeed: { circle: { area: string; impressions: number; ctr: number; completion: number | null; replay: number | null }[]; featureCards: { area: string; impressions: number; ctr: number; completion: number | null; replay: number | null }[]; exclusives: { area: string; impressions: number; ctr: number; completion: number | null; replay: number | null }[] } | null;
 };

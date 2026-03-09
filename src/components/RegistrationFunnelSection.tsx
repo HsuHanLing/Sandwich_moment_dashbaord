@@ -264,7 +264,7 @@ export function RegistrationFunnelSection({ data, loading, analyticsDays, t }: P
                           );
                         }}
                       />
-                      <Bar dataKey="users" radius={[0, 4, 4, 0]} maxBarSize={28} nameKey="label">
+                      <Bar dataKey="users" radius={[0, 4, 4, 0]} maxBarSize={28} name="users">
                         {funnel.map((_, i) => (
                           <Cell key={funnel[i].step} fill={FUNNEL_COLORS[i % FUNNEL_COLORS.length]} />
                         ))}

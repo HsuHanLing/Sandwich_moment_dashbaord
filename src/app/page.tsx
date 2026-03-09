@@ -25,6 +25,7 @@ import { ReferralRewardSection } from "@/components/ReferralRewardSection";
 import { FlywheelHealthDashboard } from "@/components/FlywheelHealthDashboard";
 import { RegistrationFunnelSection } from "@/components/RegistrationFunnelSection";
 import { useLocale } from "@/contexts/LocaleContext";
+import type { TranslationKey } from "@/lib/i18n";
 
 type KPI = {
   data_range_start?: string;
@@ -454,6 +455,9 @@ export default function DashboardPage() {
               {t("overviewExcludeNote")}
             </p>
           )}
+          <p className="mb-4 text-[10px] text-[var(--secondary-text)]" role="note">
+            {t("d1CohortNote")}
+          </p>
 
           {kpi && (
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
