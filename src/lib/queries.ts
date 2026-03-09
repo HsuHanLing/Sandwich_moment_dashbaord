@@ -552,6 +552,86 @@ export function getGrowthFunnelQuery(days: number = 30) {
   `;
 }
 
+// Registration Funnel: first_open → landing (screen_view) → registration (by method) → onboarding complete → enter main page
+// Breaks down registration by method: Google, Apple, Email, Phone
+export function getRegistrationFunnelQuery(days: number = 30) {
+  return `
+    WITH base AS (
+      SELECT user_pseudo_id, event_date, event_name, event_timestamp,
+        (SELECT value.string_value FROM UNNEST(event_params) WHERE key = 'result') as result_val,
+        (SELECT value.string_value FROM UNNEST(event_params) WHERE key = 'provider') as provider,
+        (SELECT value.string_value FROM UNNEST(event_params) WHERE key = 'flow_type') as flow_type
+      FROM \`${dataset()}.${table()}\`
+      WHERE _TABLE_SUFFIX >= FORMAT_DATE('%Y%m%d', DATE_SUB(CURRENT_DATE(), INTERVAL ${days + 14} DAY))
+        AND PARSE_DATE('%Y%m%d', event_date) >= DATE_SUB(CURRENT_DATE(), INTERVAL ${days + 14} DAY)
+    ),
+    first_opens AS (
+      SELECT user_pseudo_id, MIN(event_timestamp) as open_ts, MIN(PARSE_DATE('%Y%m%d', event_date)) as open_dt
+      FROM base WHERE event_name = 'first_open'
+      GROUP BY 1
+      HAVING open_dt >= DATE_SUB(CURRENT_DATE(), INTERVAL ${days} DAY)
+    ),
+    user_events AS (
+      SELECT
+        s.user_pseudo_id,
+        -- Any registration
+        MIN(CASE WHEN b.event_name IN (
+          'Success_GoogleRegister','Success_AppleRegister',
+          'Register_Email_Success','Register_Number_Success',
+          'Login_Email_Success','Login_Number_Success',
+          'signin_credit_earned','auth_submit_result','auth_oauth_result'
+        ) THEN b.event_timestamp END) as reg_ts,
+        -- Google
+        MIN(CASE WHEN b.event_name = 'Success_GoogleRegister'
+          OR (b.event_name = 'auth_oauth_result' AND b.provider = 'google')
+          THEN b.event_timestamp END) as reg_google_ts,
+        -- Apple
+        MIN(CASE WHEN b.event_name = 'Success_AppleRegister'
+          OR (b.event_name = 'auth_oauth_result' AND b.provider = 'apple')
+          THEN b.event_timestamp END) as reg_apple_ts,
+        -- Email
+        MIN(CASE WHEN b.event_name IN ('Register_Email_Success','Login_Email_Success')
+          OR (b.event_name = 'auth_submit_result' AND b.flow_type = 'signup')
+          THEN b.event_timestamp END) as reg_email_ts,
+        -- Phone
+        MIN(CASE WHEN b.event_name IN ('Register_Number_Success','Login_Number_Success')
+          THEN b.event_timestamp END) as reg_phone_ts,
+        -- Onboarding complete (success animation done, enter main page)
+        MIN(CASE WHEN (b.event_name = 'onb_guide_complete' AND b.result_val = 'success')
+          THEN b.event_timestamp END) as onb_complete_ts,
+        -- First screen view after registration (entered main page)
+        MIN(CASE WHEN b.event_name IN ('screen_view','All_PageBehavior')
+          AND b.event_timestamp > (
+            SELECT MIN(b2.event_timestamp) FROM base b2
+            WHERE b2.user_pseudo_id = s.user_pseudo_id
+            AND b2.event_name IN (
+              'Success_GoogleRegister','Success_AppleRegister',
+              'Register_Email_Success','Register_Number_Success',
+              'auth_submit_result','auth_oauth_result'
+            )
+          )
+          THEN b.event_timestamp END) as first_page_after_reg_ts
+      FROM first_opens s
+      JOIN base b ON s.user_pseudo_id = b.user_pseudo_id
+        AND PARSE_DATE('%Y%m%d', b.event_date) >= s.open_dt
+      GROUP BY 1
+    )
+    SELECT 'app_open' as step, COUNT(*) as users FROM first_opens
+    UNION ALL SELECT 'registered', COUNT(*) FROM user_events WHERE reg_ts IS NOT NULL
+    UNION ALL SELECT 'reg_google', COUNT(*) FROM user_events WHERE reg_google_ts IS NOT NULL
+    UNION ALL SELECT 'reg_apple', COUNT(*) FROM user_events WHERE reg_apple_ts IS NOT NULL
+    UNION ALL SELECT 'reg_email', COUNT(*) FROM user_events WHERE reg_email_ts IS NOT NULL
+    UNION ALL SELECT 'reg_phone', COUNT(*) FROM user_events WHERE reg_phone_ts IS NOT NULL
+    UNION ALL SELECT 'onboarding_complete', COUNT(*) FROM user_events WHERE onb_complete_ts IS NOT NULL
+    UNION ALL SELECT 'enter_main', COUNT(*) FROM user_events WHERE first_page_after_reg_ts IS NOT NULL
+    ORDER BY CASE step
+      WHEN 'app_open' THEN 1 WHEN 'registered' THEN 2
+      WHEN 'reg_google' THEN 3 WHEN 'reg_apple' THEN 4
+      WHEN 'reg_email' THEN 5 WHEN 'reg_phone' THEN 6
+      WHEN 'onboarding_complete' THEN 7 WHEN 'enter_main' THEN 8 ELSE 9 END
+  `;
+}
+
 // Retention: D1/D3/D7/D14 by signup cohort
 export function getRetentionQuery(days: number = 30) {
   return `

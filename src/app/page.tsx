@@ -23,6 +23,7 @@ import { FlywheelSection } from "@/components/FlywheelSection";
 import { ShareDataSection } from "@/components/ShareDataSection";
 import { ReferralRewardSection } from "@/components/ReferralRewardSection";
 import { FlywheelHealthDashboard } from "@/components/FlywheelHealthDashboard";
+import { RegistrationFunnelSection } from "@/components/RegistrationFunnelSection";
 import { useLocale } from "@/contexts/LocaleContext";
 
 type KPI = {
@@ -589,6 +590,9 @@ export default function DashboardPage() {
         {/* Tab 2: Growth */}
         {activeTab === "growth" && (
           <>
+        {/* Registration Funnel */}
+        <RegistrationFunnelSection analyticsDays={analyticsDays} t={t} />
+
         {/* Growth Funnel & Retention */}
         <div className="mb-8 grid gap-4 lg:grid-cols-2">
           <section className="overflow-visible rounded-xl bg-[var(--card-bg)]" style={{ border: "1px solid var(--card-stroke)", boxShadow: "var(--card-shadow)" }}>
