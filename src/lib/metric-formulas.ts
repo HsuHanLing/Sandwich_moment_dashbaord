@@ -111,6 +111,14 @@ export const METRIC_FORMULAS: Record<string, { formula: string; description: str
     formula: "(Users who returned on day 14 / New users on D0) × 100%",
     description: "D14 retention: % of cohort who had activity 14 days after signup.",
   },
+  RETENTION_D21: {
+    formula: "(Users who returned on day 21 / New users on D0) × 100%",
+    description: "D21 retention: % of cohort who had activity 21 days after signup.",
+  },
+  RETENTION_D30: {
+    formula: "(Users who returned on day 30 / New users on D0) × 100%",
+    description: "D30 retention: % of cohort who had activity 30 days after signup.",
+  },
   RETENTION_WOW: {
     formula: "Week-over-week change vs. same day in prior week",
     description: "WoW: (Current week rate − Prior week rate).",
@@ -534,5 +542,123 @@ export const METRIC_FORMULAS: Record<string, { formula: string; description: str
   REG_FUNNEL_CONVERSION: {
     formula: "(Users at step / App Open users) × 100%",
     description: "该步骤相对「打开 App」的转化率。",
+  },
+
+  // ─── Glimmo Metrics ────────────────────────────────────────────────
+  GLIMMO_DAU: {
+    formula: "COUNT(DISTINCT user_pseudo_id) per day",
+    description: "Daily Active Users: unique users with any event on that day (GA4 events_*).",
+  },
+  GLIMMO_NEW_USERS: {
+    formula: "COUNT(DISTINCT user_pseudo_id) WHERE event_name = 'first_open'",
+    description: "New users who opened the Glimmo app for the first time (first_open event from GA4).",
+  },
+  GLIMMO_ENTRIES: {
+    formula: "COUNT(*) WHERE event_name = 'Post_post'",
+    description: "Total journal entries created. Each Post_post event = one journal entry submitted (text, template, or photo).",
+  },
+  GLIMMO_AI_USERS: {
+    formula: "COUNT(DISTINCT user_pseudo_id) WHERE event_name IN ('companion_aicompanion_click', 'Homepage_bot_reply', 'Homepage_bot_like', 'companion_explore_click', 'companion_create_click')",
+    description: "Users who interacted with the AI Companion feature. companion_aicompanion_click = opened AI companion; Homepage_bot_reply = received AI reply; Homepage_bot_like = liked AI reply; companion_explore_click = explored companions; companion_create_click = created custom companion.",
+  },
+  GLIMMO_SUB_VIEWERS: {
+    formula: "COUNT(DISTINCT user_pseudo_id) WHERE event_name = 'Subscription_pageview'",
+    description: "Users who viewed the subscription/premium page. Measures top-of-funnel premium interest.",
+  },
+  // Glimmo Flywheel Nodes
+  GLIMMO_FW_DISCOVERY: {
+    formula: "COUNT(DISTINCT user_pseudo_id) WHERE event_name = 'first_open'",
+    description: "New user discovery: users who opened Glimmo for the first time. Source: first_open GA4 event.",
+  },
+  GLIMMO_FW_ONBOARDING: {
+    formula: "COUNT(DISTINCT user_pseudo_id) WHERE event_name = 'Homepage_view' AND user ∈ first_open cohort",
+    description: "Onboarding completion: first_open users who reached the Homepage. Events tracked: onboarding_personalize_click → onboarding_notification_click → Homepage_view.",
+  },
+  GLIMMO_FW_FIRST_ENTRY: {
+    formula: "COUNT(DISTINCT user_pseudo_id) WHERE event_name = 'Post_post'",
+    description: "First journal entry: users who wrote at least one entry. Post_post fires when any post (text/template/prompt/photo) is submitted.",
+  },
+  GLIMMO_FW_AI_ENGAGEMENT: {
+    formula: "COUNT(DISTINCT user_pseudo_id) WHERE event_name IN ('companion_aicompanion_click', 'Homepage_bot_reply', 'Homepage_bot_like', 'companion_explore_click', 'companion_create_click')",
+    description: "AI engagement: users who interacted with the AI Companion. Includes opening companion, receiving bot replies, liking replies, exploring, and creating custom companions.",
+  },
+  GLIMMO_FW_HABIT_LOOP: {
+    formula: "COUNT(DISTINCT user_pseudo_id) WHERE Post_post on 3+ distinct dates",
+    description: "Habit loop: users who wrote journal entries on 3+ different days. Indicates journaling habit formation.",
+  },
+  GLIMMO_FW_EMOTIONAL_VALUE: {
+    formula: "COUNT(DISTINCT user_pseudo_id) WHERE event_name IN ('Insight_pageview', 'collection_enter_click')",
+    description: "Emotional value: users who viewed Emotion Insight (Insight_pageview) or entered Personal Collection (collection_enter_click). These features provide emotional reflection value.",
+  },
+  GLIMMO_FW_SHARE: {
+    formula: "COUNT(DISTINCT user_pseudo_id) WHERE event_name IN ('Me_joininstagram_click', 'Me_joindiscord_click', 'Me_joindthread_click')",
+    description: "Social sharing: users who tapped social links (Instagram, Discord, Threads). Currently limited share instrumentation — primary growth lever per growth report.",
+  },
+  GLIMMO_FW_PREMIUM: {
+    formula: "COUNT(DISTINCT user_pseudo_id) WHERE event_name IN ('Subscription_pageview', 'Me_premium_click')",
+    description: "Premium conversion funnel: users who viewed the subscription page or tapped 'Premium' in settings. Subscription_pageview = paywall shown; Me_premium_click = premium entry from profile.",
+  },
+  // Glimmo Onboarding Funnel Steps
+  GLIMMO_OB_FIRST_OPEN: {
+    formula: "COUNT(DISTINCT user_pseudo_id) WHERE event_name = 'first_open'",
+    description: "First open: user installed and opened the app for the first time.",
+  },
+  GLIMMO_OB_PERSONALIZE: {
+    formula: "COUNT(DISTINCT user_pseudo_id) WHERE event_name = 'onboarding_personalize_click'",
+    description: "Personalize step: user tapped to personalize their journal setup during onboarding.",
+  },
+  GLIMMO_OB_NOTIFICATION: {
+    formula: "COUNT(DISTINCT user_pseudo_id) WHERE event_name IN ('onboarding_notification_click', 'onboarding_notification_maybelater_click')",
+    description: "Notification step: user interacted with notification permission prompt (accepted or skipped).",
+  },
+  GLIMMO_OB_HOMEPAGE: {
+    formula: "COUNT(DISTINCT user_pseudo_id) WHERE event_name = 'Homepage_view'",
+    description: "Homepage reached: user completed onboarding and saw the main Homepage.",
+  },
+  GLIMMO_OB_FIRST_POST: {
+    formula: "COUNT(DISTINCT user_pseudo_id) WHERE event_name = 'Post_post'",
+    description: "First entry: user submitted their first journal post after onboarding.",
+  },
+  // Glimmo Feature Adoption
+  GLIMMO_FA_WRITERS: {
+    formula: "COUNT(DISTINCT user_pseudo_id) WHERE event_name = 'Post_post'",
+    description: "Journal writers: unique users who submitted at least one journal entry (Post_post).",
+  },
+  GLIMMO_FA_AI_COMPANION: {
+    formula: "COUNT(DISTINCT user_pseudo_id) WHERE event_name IN ('companion_aicompanion_click', 'Homepage_bot_reply', 'companion_explore_click', 'companion_create_click')",
+    description: "AI Companion adopters: users who used the AI companion feature (opened, received replies, explored, or created companions).",
+  },
+  GLIMMO_FA_COLLECTION: {
+    formula: "COUNT(DISTINCT user_pseudo_id) WHERE event_name = 'collection_enter_click'",
+    description: "Collection adopters: users who entered the Personal Collection feature to catalog physical objects and memories.",
+  },
+  GLIMMO_FA_INSIGHT: {
+    formula: "COUNT(DISTINCT user_pseudo_id) WHERE event_name = 'Insight_pageview'",
+    description: "Emotion Insight adopters: users who viewed the Insight page showing automatic emotional pattern tracking.",
+  },
+  GLIMMO_FA_SUBSCRIPTION: {
+    formula: "COUNT(DISTINCT user_pseudo_id) WHERE event_name = 'Subscription_pageview'",
+    description: "Subscription viewers: users who viewed the premium subscription page.",
+  },
+  // Glimmo Health Dashboard
+  GLIMMO_HEALTH_ONBOARDING: {
+    formula: "(Homepage_view users / first_open users) × 100%",
+    description: "Onboarding completion rate: % of new users who reached the Homepage after onboarding.",
+  },
+  GLIMMO_HEALTH_WRITING: {
+    formula: "(Post_post users / Active users) × 100%",
+    description: "Writing rate: % of active users who submitted at least one journal entry.",
+  },
+  GLIMMO_HEALTH_AI: {
+    formula: "(AI companion users / Active users) × 100%",
+    description: "AI usage rate: % of active users who interacted with the AI Companion feature.",
+  },
+  GLIMMO_HEALTH_EMOTIONAL: {
+    formula: "(Insight + Collection users / Active users) × 100%",
+    description: "Emotional value rate: % of active users who used Insight or Collection features.",
+  },
+  GLIMMO_HEALTH_PREMIUM: {
+    formula: "(Subscription_pageview users / Active users) × 100%",
+    description: "Premium funnel rate: % of active users who viewed the subscription page.",
   },
 };

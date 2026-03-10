@@ -76,3 +76,16 @@ body {
 * {
   font-family: inherit;
 }
+
+/* Glimmo product theme — orange accent from logo */
+.glimmo-theme {
+  --accent: #f5a623;
+  --accent-hover: #e09516;
+}
+
+@media (prefers-color-scheme: dark) {
+  .glimmo-theme {
+    --accent: #f5b84a;
+    --accent-hover: #f5a623;
+  }
+}

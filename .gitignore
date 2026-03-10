@@ -26,6 +26,7 @@
 
 # Google service account keys (never commit!)
 frog-f5f24-9d45016861f2.json
+echoes-acf61-*.json
 
 # debug
 npm-debug.log*

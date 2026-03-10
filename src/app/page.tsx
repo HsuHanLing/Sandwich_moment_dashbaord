@@ -264,7 +264,7 @@ export default function DashboardPage() {
         <div className="mx-auto flex w-full max-w-[1600px] items-center justify-between px-4 py-3 sm:px-8">
           <div className="flex items-center gap-2">
             <img src="/logo2.png" alt="" className="h-7 w-auto rounded-md" />
-            <h1 className="text-base font-semibold uppercase tracking-tight">{t("title")}</h1>
+            <span className="text-base font-semibold tracking-tight text-[var(--foreground)]">Dashboard</span>
           </div>
           <div className="flex items-center gap-3">
             <div className="flex rounded-full p-1" style={{ backgroundColor: "var(--pill-bg)", boxShadow: "var(--shadow-sm)" }}>

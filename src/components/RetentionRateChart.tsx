@@ -20,6 +20,8 @@ const DAY_METRIC_KEYS: Record<string, string> = {
   D3: "RETENTION_D3",
   D7: "RETENTION_D7",
   D14: "RETENTION_D14",
+  D21: "RETENTION_D21",
+  D30: "RETENTION_D30",
 };
 
 const TOOLTIP_BOX =
