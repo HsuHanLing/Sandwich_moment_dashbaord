@@ -464,9 +464,8 @@ export function getEconomyHealthQuery(days: number = 30, segment: string = "all"
           (SELECT value.string_value FROM UNNEST(event_params) WHERE key = 'reward_amount') as reward_val
         FROM \`${dataset()}.${table()}\`
         WHERE ${tableFilter(days)} ${paidFilter}
-          AND event_name IN ('scratch_result_view', 'scratch_reward_grant_result', 'onb_scratchcard_grant')
       )
-      WHERE reward_val IS NOT NULL
+      WHERE reward_val IS NOT NULL AND SAFE_CAST(reward_val AS INT64) BETWEEN 0 AND 20000
     ),
     upgrade_stats AS (
       SELECT
@@ -953,6 +952,168 @@ export function getUnlockDistributionQuery(days: number = 30) {
   `;
 }
 
+// Scratch count distribution (auto or manual) in period — per-user scratch event count, bucketed
+export function getScratchDistributionQuery(days: number = 30) {
+  return `
+    WITH base_users AS (
+      SELECT DISTINCT user_pseudo_id
+      FROM \`${dataset()}.${table()}\`
+      WHERE ${tableFilter(days)}
+    ),
+    scratch_per_user AS (
+      SELECT user_pseudo_id,
+        COUNT(*) as scratch_count,
+        COUNTIF(event_name = 'scratch_auto_start') as auto_count,
+        COUNTIF(event_name != 'scratch_auto_start') as manual_count
+      FROM \`${dataset()}.${table()}\`
+      WHERE ${tableFilter(days)} AND event_name LIKE '%scratch%'
+      GROUP BY 1
+    ),
+    with_bucket AS (
+      SELECT
+        b.user_pseudo_id,
+        COALESCE(s.scratch_count, 0) as scratch_count,
+        COALESCE(s.auto_count, 0) as auto_count,
+        COALESCE(s.manual_count, 0) as manual_count,
+        CASE
+          WHEN COALESCE(s.scratch_count, 0) = 0 THEN '0'
+          WHEN COALESCE(s.scratch_count, 0) = 1 THEN '1'
+          WHEN COALESCE(s.scratch_count, 0) = 2 THEN '2'
+          WHEN COALESCE(s.scratch_count, 0) = 3 THEN '3'
+          WHEN COALESCE(s.scratch_count, 0) = 4 THEN '4'
+          WHEN COALESCE(s.scratch_count, 0) BETWEEN 5 AND 9 THEN '5-9'
+          ELSE '10+'
+        END as bucket
+      FROM base_users b
+      LEFT JOIN scratch_per_user s ON b.user_pseudo_id = s.user_pseudo_id
+    )
+    SELECT bucket, COUNT(*) as user_count
+    FROM with_bucket
+    GROUP BY bucket
+    ORDER BY MIN(scratch_count)
+  `;
+}
+
+// Reward distribution in period: per-user reward event count and per-user total diamonds, bucketed
+export function getRewardDistributionQuery(days: number = 30) {
+  return `
+    WITH base_users AS (
+      SELECT DISTINCT user_pseudo_id
+      FROM \`${dataset()}.${table()}\`
+      WHERE ${tableFilter(days)}
+    ),
+    reward_events AS (
+      SELECT user_pseudo_id,
+        (SELECT value.string_value FROM UNNEST(event_params) WHERE key = 'reward_amount') as reward_amount
+      FROM \`${dataset()}.${table()}\`
+      WHERE ${tableFilter(days)}
+    ),
+    reward_filtered AS (
+      SELECT user_pseudo_id, SAFE_CAST(reward_amount AS INT64) as amt
+      FROM reward_events
+      WHERE reward_amount IS NOT NULL AND SAFE_CAST(reward_amount AS INT64) BETWEEN 0 AND 20000
+    ),
+    per_user AS (
+      SELECT user_pseudo_id,
+        COUNT(*) as reward_count,
+        COALESCE(SUM(amt), 0) as total_diamonds
+      FROM reward_filtered
+      GROUP BY 1
+    ),
+    with_count_bucket AS (
+      SELECT b.user_pseudo_id,
+        COALESCE(r.reward_count, 0) as reward_count,
+        COALESCE(r.total_diamonds, 0) as total_diamonds,
+        CASE
+          WHEN COALESCE(r.reward_count, 0) = 0 THEN '0'
+          WHEN COALESCE(r.reward_count, 0) = 1 THEN '1'
+          WHEN COALESCE(r.reward_count, 0) = 2 THEN '2'
+          WHEN COALESCE(r.reward_count, 0) BETWEEN 3 AND 4 THEN '3-4'
+          WHEN COALESCE(r.reward_count, 0) BETWEEN 5 AND 9 THEN '5-9'
+          ELSE '10+'
+        END as count_bucket,
+        CASE
+          WHEN COALESCE(r.total_diamonds, 0) = 0 THEN '0'
+          WHEN COALESCE(r.total_diamonds, 0) BETWEEN 1 AND 1000 THEN '1-1k'
+          WHEN COALESCE(r.total_diamonds, 0) BETWEEN 1001 AND 5000 THEN '1k-5k'
+          WHEN COALESCE(r.total_diamonds, 0) BETWEEN 5001 AND 10000 THEN '5k-10k'
+          ELSE '10k-20k'
+        END as diamonds_bucket
+      FROM base_users b
+      LEFT JOIN per_user r ON b.user_pseudo_id = r.user_pseudo_id
+    )
+    SELECT
+      'count' as metric_type,
+      count_bucket as bucket,
+      COUNT(*) as user_count
+    FROM with_count_bucket
+    GROUP BY count_bucket
+    UNION ALL
+    SELECT
+      'diamonds' as metric_type,
+      diamonds_bucket as bucket,
+      COUNT(*) as user_count
+    FROM with_count_bucket
+    GROUP BY diamonds_bucket
+    ORDER BY metric_type, bucket
+  `;
+}
+
+// Withdraw totals in period (users, events, total amount USD)
+export function getWithdrawTotalsQuery(days: number = 30) {
+  return `
+    WITH withdraw_events AS (
+      SELECT user_pseudo_id, COALESCE(event_value_in_usd, 0) as amount_usd
+      FROM \`${dataset()}.${table()}\`
+      WHERE ${tableFilter(days)}
+        AND (event_name LIKE '%withdraw%' OR event_name LIKE '%payout%')
+    ),
+    per_user AS (
+      SELECT user_pseudo_id, COUNT(*) as withdraw_count, SUM(amount_usd) as total_usd
+      FROM withdraw_events
+      WHERE amount_usd > 0
+      GROUP BY 1
+    )
+    SELECT
+      COUNT(DISTINCT user_pseudo_id) as withdraw_users,
+      CAST(COALESCE(SUM(withdraw_count), 0) AS INT64) as withdraw_events,
+      ROUND(COALESCE(SUM(total_usd), 0), 2) as total_amount_usd
+    FROM per_user
+  `;
+}
+
+// Withdraw amount per user distribution (USD buckets)
+export function getWithdrawDistributionQuery(days: number = 30) {
+  return `
+    WITH withdraw_events AS (
+      SELECT user_pseudo_id, COALESCE(event_value_in_usd, 0) as amount_usd
+      FROM \`${dataset()}.${table()}\`
+      WHERE ${tableFilter(days)}
+        AND (event_name LIKE '%withdraw%' OR event_name LIKE '%payout%')
+    ),
+    per_user AS (
+      SELECT user_pseudo_id, SUM(amount_usd) as total_usd
+      FROM withdraw_events
+      WHERE amount_usd > 0
+      GROUP BY 1
+    ),
+    with_bucket AS (
+      SELECT
+        CASE
+          WHEN total_usd < 10 THEN '1-10'
+          WHEN total_usd < 50 THEN '10-50'
+          WHEN total_usd < 100 THEN '50-100'
+          ELSE '100+'
+        END as bucket
+      FROM per_user
+    )
+    SELECT bucket, COUNT(*) as user_count
+    FROM with_bucket
+    GROUP BY bucket
+    ORDER BY MIN(CASE bucket WHEN '1-10' THEN 1 WHEN '10-50' THEN 2 WHEN '50-100' THEN 3 ELSE 4 END)
+  `;
+}
+
 // Paid Users: KPI summary with first-time vs repeat breakdown
 export function getPaidUsersKPIQuery(days: number = 30) {
   const lookback = days + 60;
@@ -1414,14 +1575,16 @@ export function getFlywheelQuery(days: number = 30) {
       FROM unlock_counts
     ),
     -- Node 5: Scratch & Reward
+    -- reward_users / total_diamonds: any event with reward_amount 0–20k diamonds = "reward triggered"
+    -- (includes manual scratch + auto-reward on $UP unlock; user need not scratch to get reward)
     scratch AS (
       SELECT
         COUNT(DISTINCT CASE WHEN event_name LIKE '%scratch%' THEN user_pseudo_id END) as scratch_users,
         COUNT(CASE WHEN event_name LIKE '%scratch%' THEN 1 END) as scratch_events,
-        COUNT(DISTINCT CASE WHEN event_name IN ('scratch_result_view','scratch_reward_grant_result','onb_scratchcard_grant')
-          AND reward_amount IS NOT NULL THEN user_pseudo_id END) as reward_users,
-        COALESCE(SUM(CASE WHEN event_name IN ('scratch_result_view','scratch_reward_grant_result','onb_scratchcard_grant')
-          THEN SAFE_CAST(reward_amount AS INT64) END), 0) as total_diamonds
+        COUNT(DISTINCT CASE WHEN reward_amount IS NOT NULL
+          AND SAFE_CAST(reward_amount AS INT64) BETWEEN 0 AND 20000 THEN user_pseudo_id END) as reward_users,
+        COALESCE(SUM(CASE WHEN reward_amount IS NOT NULL
+          AND SAFE_CAST(reward_amount AS INT64) BETWEEN 0 AND 20000 THEN SAFE_CAST(reward_amount AS INT64) END), 0) as total_diamonds
       FROM base
     ),
     -- Node 6: Share (after scratch settlement page)

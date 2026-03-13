@@ -24,6 +24,7 @@ import { ShareDataSection } from "@/components/ShareDataSection";
 import { ReferralRewardSection } from "@/components/ReferralRewardSection";
 import { FlywheelHealthDashboard } from "@/components/FlywheelHealthDashboard";
 import { RegistrationFunnelSection } from "@/components/RegistrationFunnelSection";
+import { ScratchRewardWithdrawSection } from "@/components/ScratchRewardWithdrawSection";
 import { useLocale } from "@/contexts/LocaleContext";
 import type { TranslationKey } from "@/lib/i18n";
 
@@ -112,6 +113,15 @@ export default function DashboardPage() {
   const [flywheelData, setFlywheelData] = useState<{ nodes: { id: string; name: string; nameCn: string; metrics: Record<string, number>; status: "healthy" | "warning" | "broken"; score: number; conversion: number | null; benchmark: string }[]; overallScore: number; summary: Record<string, number>; days: number }>({ nodes: [], overallScore: 0, summary: {}, days: 30 });
   const [subscriptionData, setSubscriptionData] = useState<{ kpi: { total_exchange: number; auto_convert: number; manual_convert: number; total_paid: number; total_wallet_sub: number; paid_revenue: number; nonmember_hint: number; membership_entry: number; iap_start: number; iap_fail: number; topup_start: number; topup_success: number } | null; daily: { date: string; exchange: number; auto_convert: number; manual_convert: number; paid: number; nonmember_hint: number; membership_entry: number; iap_start: number; iap_fail: number; topup_start: number; topup_success: number }[]; funnel: { step: string; label: string; users: number }[]; convertMethods: { method: string; count: number }[] }>({ kpi: null, daily: [], funnel: [], convertMethods: [] });
   const [registrationFunnelData, setRegistrationFunnelData] = useState<{ funnel: { step: string; users: number; fromTop: number }[]; channels: { channel: string; clicked: number; success: number; failure: number }[] } | null>(null);
+  const [growthBehavior, setGrowthBehavior] = useState<{
+    scratch_distribution: { bucket: string; user_count: number; pct: number }[];
+    scratch_total_users: number;
+    reward_count_distribution: { bucket: string; user_count: number; pct: number }[];
+    reward_diamonds_distribution: { bucket: string; user_count: number; pct: number }[];
+    reward_total_users: number;
+    withdraw: { withdraw_users: number; withdraw_events: number; total_amount_usd: number };
+    withdraw_distribution: { bucket: string; user_count: number; pct: number }[];
+  } | null>(null);
   const [analyticsDays, setAnalyticsDays] = useState(30);
   const [analyticsLoading, setAnalyticsLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<"overview" | "growth" | "monetization" | "flywheel" | "ai">("overview");
@@ -182,7 +192,7 @@ export default function DashboardPage() {
       setEconSegment("all");
       const qs = `?days=${analyticsDays}`;
       try {
-        const [ua, geo, cs, gf, regFunnel, ret, retUnlock, mon, eh, cf, um, pu, pg, acq, sub, fw] = await Promise.all([
+        const [ua, geo, cs, gf, regFunnel, ret, retUnlock, mon, eh, cf, um, pu, pg, acq, sub, fw, gb] = await Promise.all([
           fetch(`/api/marketing/user-attributes${qs}`).then((r) => r.json()),
           fetch(`/api/marketing/geo-distribution${qs}`).then((r) => r.json()),
           fetch(`/api/marketing/creator-supply${qs}`).then((r) => r.json()),
@@ -199,6 +209,7 @@ export default function DashboardPage() {
           fetch(`/api/marketing/user-acquisition${qs}`).then((r) => r.json()).catch(() => ({ channels: [], referrals: [] })),
           fetch(`/api/marketing/subscription-analysis${qs}`).then((r) => r.json()).catch(() => ({ kpi: null, daily: [], funnel: [], convertMethods: [] })),
           fetch(`/api/marketing/flywheel${qs}`).then((r) => r.json()).catch(() => ({ nodes: [], overallScore: 0, summary: {}, days: 30 })),
+          fetch(`/api/marketing/growth-behavior${qs}`).then((r) => (r.ok ? r.json() : null)),
         ]);
         if (ua?.age && ua?.device) setUserAttributes(ua);
         if (Array.isArray(geo)) setGeoDistribution(geo);
@@ -218,6 +229,7 @@ export default function DashboardPage() {
         if (acq?.channels) setUserAcquisition(acq);
         if (sub?.kpi) setSubscriptionData(sub);
         if (fw?.nodes) setFlywheelData(fw);
+        if (gb?.scratch_distribution) setGrowthBehavior(gb);
       } catch (e) {
         console.error("Analytics fetch error:", e);
       } finally {
@@ -688,6 +700,19 @@ export default function DashboardPage() {
         </div>
 
         <UnlockInsightsSection d7Retention={unlockD7Retention} distribution={unlockDistribution} meta={unlockMeta} analyticsDays={analyticsDays} t={tStr} />
+        {growthBehavior && (
+          <ScratchRewardWithdrawSection
+            scratchDistribution={growthBehavior.scratch_distribution}
+            scratchTotalUsers={growthBehavior.scratch_total_users}
+            rewardCountDistribution={growthBehavior.reward_count_distribution}
+            rewardDiamondsDistribution={growthBehavior.reward_diamonds_distribution}
+            rewardTotalUsers={growthBehavior.reward_total_users}
+            withdraw={growthBehavior.withdraw}
+            withdrawDistribution={growthBehavior.withdraw_distribution}
+            analyticsDays={analyticsDays}
+            t={tStr}
+          />
+        )}
         <ShareDataSection
           shareNode={flywheelData.nodes.find((n) => n.id === "share") ?? null}
           referralNode={flywheelData.nodes.find((n) => n.id === "referral") ?? null}

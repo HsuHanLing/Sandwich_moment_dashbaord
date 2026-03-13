@@ -137,8 +137,8 @@ export const METRIC_FORMULAS: Record<string, { formula: string; description: str
     description: "Upgrade card usage rate: % of DAU who used an upgrade card.",
   },
   ECON_AVG_REWARD: {
-    formula: "SUM(reward_amount diamonds) / COUNT(scratch_result_view + onb_scratchcard_grant events)",
-    description: "Average diamond reward per scratch card. Extracted from event_params.reward_amount on scratch_result_view and onb_scratchcard_grant events.",
+    formula: "SUM(reward_amount) / COUNT(reward events) for events with reward_amount in [0, 20000]",
+    description: "Average diamond reward per reward event. Includes scratch and unlock auto-reward (0–20k diamonds).",
   },
   // Content & Feed
   FEED_IMPRESSIONS: {
@@ -281,16 +281,16 @@ export const METRIC_FORMULAS: Record<string, { formula: string; description: str
     description: "Users who interacted with scratch cards. Includes scratch_entry_click, scratch_complete, scratch_auto_start, scratch_reward_grant_result, scratch_share_click.",
   },
   FW_REWARD_USERS: {
-    formula: "COUNT(DISTINCT user_pseudo_id) WHERE event_name IN ('scratch_result_view', 'scratch_reward_grant_result', 'onb_scratchcard_grant') AND reward_amount IS NOT NULL",
-    description: "Users who received a diamond reward. scratch_reward_grant_result has diamonds_amount=500, onb_scratchcard_grant has reward_amount from newbie guide.",
+    formula: "COUNT(DISTINCT user_pseudo_id) WHERE any event has reward_amount in [0, 20000] diamonds",
+    description: "Users who triggered a reward (0–20k diamonds). Includes manual scratch and auto-reward on $UP unlock; no scratch required.",
   },
   FW_TOTAL_DIAMONDS: {
-    formula: "SUM(SAFE_CAST(reward_amount AS INT64)) from scratch_result_view, scratch_reward_grant_result, onb_scratchcard_grant",
-    description: "Total diamonds distributed. Sourced from event_params.reward_amount (or diamonds_amount) on scratch result events.",
+    formula: "SUM(reward_amount) for events with reward_amount in [0, 20000]",
+    description: "Total diamonds distributed. Any event with event_params.reward_amount 0–20k (scratch + unlock auto-reward).",
   },
   FW_AVG_REWARD: {
     formula: "Total diamonds / Reward users",
-    description: "Average diamond reward per user who scratched.",
+    description: "Average diamond reward per rewarded user (includes unlock auto-reward).",
   },
   FW_SCRATCH_RATE: {
     formula: "(Scratch users / Active users) × 100%",
@@ -315,6 +315,35 @@ export const METRIC_FORMULAS: Record<string, { formula: string; description: str
   FW_CASHOUT_RATE: {
     formula: "(Cashout users / Scratch users) × 100%",
     description: "% of scratch users who attempted to cash out.",
+  },
+  // Growth: Scratch / Reward / Withdraw behavior (distribution & totals)
+  GROWTH_SCRATCH_DIST: {
+    formula: "Per user: COUNT(events) WHERE event_name LIKE '%scratch%' in period. Buckets: 0, 1, 2, 3, 4, 5-9, 10+. Includes scratch_auto_start (auto) and all other scratch_* (manual).",
+    description: "Scratch count distribution: how many times each user triggered a scratch (auto or manual) in the selected period. Denominator = all active users in period.",
+  },
+  GROWTH_REWARD_COUNT_DIST: {
+    formula: "Per user: COUNT(events) WHERE event_params.reward_amount IN [0, 20000] in period. Buckets: 0, 1, 2, 3-4, 5-9, 10+.",
+    description: "Reward trigger count per user (any event with reward_amount 0–20k diamonds). Includes scratch rewards and unlock auto-reward.",
+  },
+  GROWTH_REWARD_DIAMONDS_DIST: {
+    formula: "Per user: SUM(SAFE_CAST(reward_amount AS INT64)) for events with reward_amount in [0, 20000]. Buckets: 0, 1-1k, 1k-5k, 5k-10k, 10k-20k diamonds.",
+    description: "Total diamonds received per user in period (from events with event_params.reward_amount 0–20k).",
+  },
+  GROWTH_WITHDRAW_USERS: {
+    formula: "COUNT(DISTINCT user_pseudo_id) WHERE (event_name LIKE '%withdraw%' OR event_name LIKE '%payout%') AND event_value_in_usd > 0",
+    description: "Users who had at least one withdraw/payout event with positive amount in the period.",
+  },
+  GROWTH_WITHDRAW_EVENTS: {
+    formula: "COUNT(*) WHERE (event_name LIKE '%withdraw%' OR event_name LIKE '%payout%') AND event_value_in_usd > 0",
+    description: "Total number of withdraw/payout events (with positive event_value_in_usd) in the period.",
+  },
+  GROWTH_WITHDRAW_AMOUNT: {
+    formula: "SUM(event_value_in_usd) WHERE (event_name LIKE '%withdraw%' OR event_name LIKE '%payout%')",
+    description: "Total withdrawal amount (USD) from event_value_in_usd on withdraw/payout events.",
+  },
+  GROWTH_WITHDRAW_AMOUNT_DIST: {
+    formula: "Per user: SUM(event_value_in_usd) for withdraw/payout events. Buckets: 1-10, 10-50, 50-100, 100+ USD.",
+    description: "Distribution of total withdrawal amount per user (USD) in the period.",
   },
   FW_INVITE_CLICKS: {
     formula: "COUNT(DISTINCT user_pseudo_id) WHERE event_name = 'Click_InviteButton'",

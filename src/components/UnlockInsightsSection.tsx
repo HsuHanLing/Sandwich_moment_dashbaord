@@ -115,6 +115,9 @@ export function UnlockInsightsSection({ d7Retention, distribution, meta, analyti
               <p className="mt-0.5 text-base font-semibold text-[var(--foreground)]">
                 {d7Retention ? d7Retention.total_unlock_users.toLocaleString() : "—"}
               </p>
+              <p className="mt-1 text-[9px] text-[var(--secondary-text)] opacity-90">
+                {t("unlockD7CohortHint").replace("{days}", String(analyticsDays))}
+              </p>
             </div>
             <div className="rounded-lg p-2.5" style={{ backgroundColor: "var(--background)" }}>
               <p className="text-[10px] text-[var(--secondary-text)]">{t("unlockRetainedUsers")}</p>
@@ -139,7 +142,7 @@ export function UnlockInsightsSection({ d7Retention, distribution, meta, analyti
               <p className="mt-0.5 text-[10px] text-[var(--secondary-text)]">{t("unlockDistributionDesc")}</p>
             </div>
             {meta && meta.distribution_total_users > 0 && (
-              <span className="shrink-0 rounded px-1.5 py-0.5 text-[9px] font-medium" style={badgeStyle}>
+              <span className="shrink-0 rounded px-1.5 py-0.5 text-[9px] font-medium" style={badgeStyle} title={t("signupCohortHint")}>
                 {t("signupCohort")}: {meta.distribution_total_users.toLocaleString()} {t("users").toLowerCase()}
               </span>
             )}
