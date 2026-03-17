@@ -6,6 +6,7 @@ export const dynamic = "force-dynamic";
 
 function parseRow(r: Record<string, unknown>) {
   const dateStr = String(r.date_str ?? r.dt ?? "").slice(0, 10);
+  const pseudoDau = Number(r.pseudo_dau ?? 0);
   const dau = Number(r.dau ?? 0);
   const newUsers = Number(r.new_users ?? 0);
   const payers = Number(r.payers ?? 0);
@@ -13,7 +14,7 @@ function parseRow(r: Record<string, unknown>) {
   const retainedD1 = Number(r.retained_d1 ?? 0);
   const prevDayRegistrations = Number(r.prev_day_registrations ?? 0);
   const d1Retention = prevDayRegistrations > 0 ? (retainedD1 / prevDayRegistrations) * 100 : 0;
-  return { dateStr, dau, newUsers, payers, revenue, d1Retention };
+  return { dateStr, pseudoDau, dau, newUsers, payers, revenue, d1Retention };
 }
 
 export async function GET(request: Request) {
@@ -41,12 +42,13 @@ export async function GET(request: Request) {
     const currRows = arr.slice(0, span);
     const wowRows = mode === "today" ? arr.slice(6, 7) : arr.slice(span, span * 2);
 
-    const sum = (list: { dau: number; payers: number; revenue: number; d1Retention: number; newUsers: number }[]) => {
+    const sum = (list: { pseudoDau: number; dau: number; payers: number; revenue: number; d1Retention: number; newUsers: number }[]) => {
+      const pseudoDau = list.reduce((s, x) => s + x.pseudoDau, 0);
       const dau = list.reduce((s, x) => s + x.dau, 0);
       const payers = list.reduce((s, x) => s + x.payers, 0);
       const revenue = list.reduce((s, x) => s + x.revenue, 0);
       const d1Avg = list.length ? list.reduce((s, x) => s + x.d1Retention, 0) / list.length : 0;
-      return { dau, payers, revenue, d1Retention: d1Avg };
+      return { pseudoDau, dau, payers, revenue, d1Retention: d1Avg };
     };
 
     const curr = sum(currRows.map(parseRow));
@@ -64,6 +66,7 @@ export async function GET(request: Request) {
       data_range_start: rangeStart,
       data_range_end: today,
       data_updated_at: dataUpdatedAt,
+      pseudo_dau: curr.pseudoDau,
       dau: curr.dau,
       d1_retention: Math.round(curr.d1Retention * 10) / 10,
       pay_rate: curr.dau > 0 ? Math.round((curr.payers / curr.dau) * 1000) / 10 : 0,
@@ -71,6 +74,7 @@ export async function GET(request: Request) {
       revenue: Math.round(curr.revenue * 100) / 100,
       withdrawal: Math.round(curr.revenue * 0.2 * 100) / 100,
       roi: curr.revenue > 0 ? Math.round((curr.revenue / (curr.revenue * 0.7)) * 100) / 100 : 0,
+      wow_pseudo_dau: wow.pseudoDau,
       wow_dau: wow.dau,
       wow_d1: Math.round(wow.d1Retention * 10) / 10,
       wow_pay_rate: wow.dau > 0 ? Math.round((wow.payers / wow.dau) * 1000) / 10 : 0,

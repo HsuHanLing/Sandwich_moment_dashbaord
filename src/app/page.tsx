@@ -32,6 +32,7 @@ type KPI = {
   data_range_start?: string;
   data_range_end?: string;
   data_updated_at?: string | null;
+  pseudo_dau: number;
   dau: number;
   d1_retention: number;
   pay_rate: number;
@@ -39,6 +40,7 @@ type KPI = {
   revenue: number;
   withdrawal: number;
   roi: number;
+  wow_pseudo_dau: number;
   wow_dau: number;
   wow_d1: number;
   wow_pay_rate: number;
@@ -478,7 +480,15 @@ export default function DashboardPage() {
           </p>
 
           {kpi && (
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-8">
+              <KPICard
+                title="Pseudo DAU"
+                value={kpi.pseudo_dau.toLocaleString()}
+                change={pctChange(kpi.pseudo_dau, kpi.wow_pseudo_dau)}
+                changePositive={kpi.pseudo_dau >= kpi.wow_pseudo_dau}
+                metricKey="DAU"
+                vsLabel={t("vs7d")}
+              />
               <KPICard
                 title="DAU"
                 value={kpi.dau.toLocaleString()}

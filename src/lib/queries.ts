@@ -208,11 +208,12 @@ export function getKPIAndWowQuery(mode: "today" | "7d" | "30d", filters?: Overvi
       SELECT
         FORMAT_DATE('%Y-%m-%d', PARSE_DATE('%Y%m%d', event_date)) as date_str,
         PARSE_DATE('%Y%m%d', event_date) as dt,
-        COUNT(DISTINCT user_pseudo_id) as dau,
+        COUNT(DISTINCT user_pseudo_id) as pseudo_dau,
+        COUNT(DISTINCT user_id) as dau,
         COUNT(DISTINCT CASE WHEN event_name = 'first_open' THEN user_pseudo_id END) as new_users,
-        COUNT(DISTINCT CASE WHEN event_name IN ('purchase','in_app_purchase') THEN user_pseudo_id END) as payers,
-        COALESCE(SUM(CASE WHEN event_name IN ('purchase','in_app_purchase') THEN event_value_in_usd END), 0) as revenue,
-        COUNT(DISTINCT CASE WHEN event_name IN ('video_unlock_success','dollarsup_first_unlock_success','video_click_unlock') THEN user_pseudo_id END) as unlock_users
+        COUNT(DISTINCT CASE WHEN event_name IN ('purchase','in_app_purchase', 'iap_success') THEN user_pseudo_id END) as payers,
+        COALESCE(SUM(CASE WHEN event_name IN ('purchase','in_app_purchase', 'iap_success') THEN event_value_in_usd END), 0) as revenue,
+        COUNT(DISTINCT CASE WHEN event_name IN ('video_unlock_success','dollarsup_first_unlock_success') THEN user_pseudo_id END) as unlock_users
       FROM \`${dataset()}.${table()}\`
       WHERE ${tableFilter(days)}${extra}
       GROUP BY 1, 2
@@ -248,6 +249,7 @@ export function getKPIAndWowQuery(mode: "today" | "7d" | "30d", filters?: Overvi
     SELECT
       d.date_str,
       d.dt,
+      d.pseudo_dau,
       d.dau,
       d.new_users,
       d.payers,
@@ -273,13 +275,13 @@ export function getDailyTrendQuery(days: number = 7, filters?: OverviewFilters) 
         COUNT(DISTINCT CASE WHEN event_name = 'first_open' THEN user_pseudo_id END) as new_users,
         COUNT(DISTINCT user_pseudo_id) as dau,
         COUNT(DISTINCT CASE WHEN event_name IN ('purchase','in_app_purchase',
-          'app_store_subscription_convert','app_store_subscription_renew')
+          'app_store_subscription_convert','app_store_subscription_renew', 'iap_success')
           THEN user_pseudo_id END) as payers,
         COALESCE(SUM(CASE WHEN event_name IN ('purchase','in_app_purchase',
-          'app_store_subscription_convert','app_store_subscription_renew')
+          'app_store_subscription_convert','app_store_subscription_renew', 'iap_success')
           THEN event_value_in_usd END), 0) as revenue,
-        COUNT(DISTINCT CASE WHEN event_name IN ('video_unlock_success','dollarsup_first_unlock_success','video_click_unlock') THEN user_pseudo_id END) as unlock_users,
-        COUNT(DISTINCT CASE WHEN event_name IN ('video_unlock_success','dollarsup_first_unlock_success','video_click_unlock') THEN user_pseudo_id END) as unlock_users_base,
+        COUNT(DISTINCT CASE WHEN event_name IN ('video_unlock_success','dollarsup_first_unlock_success') THEN user_pseudo_id END) as unlock_users,
+        COUNT(DISTINCT CASE WHEN event_name IN ('video_unlock_success','dollarsup_first_unlock_success') THEN user_pseudo_id END) as unlock_users_base,
         COALESCE(SUM(CASE WHEN event_name LIKE '%withdraw%' OR event_name LIKE '%payout%'
           THEN event_value_in_usd END), 0) as withdrawal
       FROM \`${dataset()}.${table()}\`
@@ -400,10 +402,10 @@ export function getMonetizationQuery(days: number = 30) {
     WITH classified AS (
     SELECT
         CASE
-          WHEN event_name IN ('app_store_subscription_convert', 'app_store_subscription_renew')
+          WHEN event_name IN ('app_store_subscription_convert', 'app_store_subscription_renew', 'iap_success')
             THEN 'Subscription'
           WHEN LOWER(COALESCE(
-        (SELECT value.string_value FROM UNNEST(event_params) WHERE key = 'product_type'),
+        (SELECT value.string_value FROM UNNEST(event_params) WHERE key = 'product_id'),
         (SELECT value.string_value FROM UNNEST(event_params) WHERE key = 'item_category'),
             ''
           )) LIKE '%sub%'
@@ -414,7 +416,7 @@ export function getMonetizationQuery(days: number = 30) {
     FROM \`${dataset()}.${table()}\`
     WHERE ${tableFilter(days)}
         AND event_name IN ('purchase', 'in_app_purchase',
-          'app_store_subscription_convert', 'app_store_subscription_renew')
+          'app_store_subscription_convert', 'app_store_subscription_renew', 'iap_success')
       AND event_value_in_usd > 0
     )
     SELECT revenue_stream, SUM(event_value_in_usd) as revenue
@@ -429,7 +431,7 @@ export function getEconomyHealthQuery(days: number = 30, segment: string = "all"
   const paidFilter = segment === "paid"
     ? `AND user_pseudo_id IN (
         SELECT DISTINCT user_pseudo_id FROM \`${dataset()}.${table()}\`
-        WHERE ${tableFilter(days)} AND event_name IN ('purchase','in_app_purchase')
+        WHERE ${tableFilter(days)} AND event_name IN ('purchase','in_app_purchase','iap_success')
       )`
     : "";
   return `
@@ -446,7 +448,7 @@ export function getEconomyHealthQuery(days: number = 30, segment: string = "all"
         COUNT(*) as unlock_events,
         COUNT(DISTINCT user_pseudo_id) as unlock_users
       FROM base
-      WHERE event_name IN ('video_unlock_success','dollarsup_first_unlock_success','video_click_unlock')
+      WHERE event_name IN ('video_unlock_success','dollarsup_first_unlock_success')
     ),
     scratch_stats AS (
       SELECT
@@ -471,7 +473,11 @@ export function getEconomyHealthQuery(days: number = 30, segment: string = "all"
       SELECT
         COUNT(DISTINCT user_pseudo_id) as upgrade_users
       FROM base
-      WHERE event_name LIKE '%upgrade%'
+      WHERE event_name = 'scratch_upgrade_result'
+        AND EXISTS (
+          SELECT 1 FROM UNNEST(event_params) 
+          WHERE key = 'upgrade_status' AND value.string_value = 'insufficient_balance' 
+        )
     )
     SELECT
       (SELECT total_dau FROM dau) as total_dau,
@@ -550,21 +556,19 @@ export function getGrowthFunnelQuery(days: number = 30) {
         MIN(CASE WHEN b.event_name IN (
           'Success_GoogleRegister','Success_AppleRegister',
           'Register_Email_Success','Register_Number_Success',
-          'Login_Email_Success','Login_Number_Success',
-          'signin_credit_earned','auth_submit_result','auth_oauth_result'
+          'auth_oauth_result'
         ) THEN b.event_date END) as first_register,
         MIN(CASE WHEN b.event_name IN (
-          'dollarsup_first_unlock_success','video_unlock_success'
+          'dollarsup_first_unlock_success'
         ) THEN b.event_date END) as first_unlock,
         MIN(CASE WHEN b.event_name IN (
-          'onb_scratchcard_grant','scratch_reward_grant_result'
+          'onb_scratchcard_grant'
         ) OR (b.event_name = 'scratch_guide_complete' AND b.result_val = 'success')
         THEN b.event_date END) as scratch_activated,
-        MIN(CASE WHEN b.event_name = 'Click_Sup'
+        MIN(CASE WHEN b.event_name in ('PostedSup_Success', 'Click_PostedSup')
           AND (b.feed_area IS NULL OR b.feed_area NOT LIKE '%$UP%')
           THEN b.event_date END) as first_sup,
-        MIN(CASE WHEN b.event_name = 'Click_Sup'
-          AND b.feed_area LIKE '%$UP%'
+        MIN(CASE WHEN b.event_name = 'Click_SendtoDollarSup'
           THEN b.event_date END) as first_up,
         MIN(CASE WHEN b.event_name IN (
           'purchase','in_app_purchase','iap_success',
@@ -645,8 +649,7 @@ export function getRegistrationFunnelQuery(days: number = 30) {
   const REG_EVENTS = `(
     b.event_name IN ('Success_GoogleRegister','Success_AppleRegister',
       'Register_Email_Success','Register_Number_Success',
-      'Login_Email_Success','Login_Number_Success',
-      'signin_credit_earned','auth_submit_result','auth_oauth_result')
+      'Login_Email_Success','Login_Number_Success','auth_oauth_result')
   )`;
   const REG_EVENTS_B2 = REG_EVENTS.replace(/\bb\./g, 'b2.');
 
@@ -729,10 +732,10 @@ export function getRegistrationFunnelQuery(days: number = 30) {
           THEN b.event_timestamp END) as reg_phone_ts,
         -- No-action expansion: 看视频 / 加好友 / 个人主页 / 拍摄 (land = enter_main already above)
         MIN(CASE WHEN b.event_name IN ('video_start','video_play','video_complete','video_end','Video_Complete','Click_Sup') THEN b.event_timestamp END) as watch_video_ts,
-        MIN(CASE WHEN (b.event_name LIKE '%follow%' OR b.event_name LIKE '%friend%' OR b.event_name IN ('add_friend','follow_user','user_follow','InviteFriendViaText_Success','profile_top_button_click','other_profile_top_button_click')) THEN b.event_timestamp END) as add_friend_ts,
+        MIN(CASE WHEN (b.event_name LIKE '%follow%' OR b.event_name LIKE '%friend%' OR b.event_name IN ('AddFriend_Success','click_follow_button','user_follow','InviteFriendViaText_Success','profile_top_button_click','other_profile_top_button_click')) THEN b.event_timestamp END) as add_friend_ts,
         MIN(CASE WHEN b.event_name IN ('screen_view','All_PageBehavior','auth_screen_view')
           AND (LOWER(COALESCE(b.screen_name,'')) LIKE '%profile%' OR LOWER(COALESCE(b.screen_name,'')) IN ('my_profile','user_profile','profile','personal_home','me')) THEN b.event_timestamp END) as profile_view_ts,
-        MIN(CASE WHEN (b.event_name LIKE '%record%' OR b.event_name LIKE '%shoot%' OR b.event_name LIKE '%capture%' OR b.event_name LIKE '%publish%' OR b.event_name IN ('video_record_start','shoot_start','publish_video','create_video','record_start')) THEN b.event_timestamp END) as shooting_ts
+        MIN(CASE WHEN (b.event_name LIKE '%record%' OR b.event_name LIKE '%shoot%' OR b.event_name LIKE '%capture%' OR b.event_name LIKE '%publish%' OR b.event_name LIKE '%post%' OR b.event_name LIKE '%Post%' OR b.event_name IN ('video_record_start','shoot_start','publish_video','create_video','record_start')) THEN b.event_timestamp END) as shooting_ts
       FROM first_opens s
       JOIN base b ON s.user_pseudo_id = b.user_pseudo_id
         AND PARSE_DATE('%Y%m%d', b.event_date) >= s.open_dt
@@ -924,7 +927,7 @@ export function getUnlockDistributionQuery(days: number = 30) {
       FROM \`${dataset()}.${table()}\`
       WHERE _TABLE_SUFFIX >= FORMAT_DATE('%Y%m%d', DATE_SUB(CURRENT_DATE(), INTERVAL ${lookback} DAY))
         AND PARSE_DATE('%Y%m%d', event_date) >= DATE_SUB(CURRENT_DATE(), INTERVAL ${lookback} DAY)
-        AND event_name IN ('video_unlock_success','dollarsup_first_unlock_success','video_click_unlock')
+        AND event_name IN ('video_unlock_success','dollarsup_first_unlock_success')
     ),
     user_counts AS (
       SELECT s.user_pseudo_id,
@@ -966,7 +969,7 @@ export function getScratchDistributionQuery(days: number = 30) {
         COUNTIF(event_name = 'scratch_auto_start') as auto_count,
         COUNTIF(event_name != 'scratch_auto_start') as manual_count
       FROM \`${dataset()}.${table()}\`
-      WHERE ${tableFilter(days)} AND event_name LIKE '%scratch%'
+      WHERE ${tableFilter(days)} AND event_name in ('Scratch_ScratchCard', 'Scratch_ScratchCard_Success', 'scratch_auto_start')
       GROUP BY 1
     ),
     with_bucket AS (
@@ -1006,7 +1009,7 @@ export function getRewardDistributionQuery(days: number = 30) {
       SELECT user_pseudo_id,
         (SELECT value.string_value FROM UNNEST(event_params) WHERE key = 'reward_amount') as reward_amount
       FROM \`${dataset()}.${table()}\`
-      WHERE ${tableFilter(days)}
+      WHERE ${tableFilter(days)} and event_name in ('scratch_result_view')
     ),
     reward_filtered AS (
       SELECT user_pseudo_id, SAFE_CAST(reward_amount AS INT64) as amt
@@ -1025,18 +1028,18 @@ export function getRewardDistributionQuery(days: number = 30) {
         COALESCE(r.reward_count, 0) as reward_count,
         COALESCE(r.total_diamonds, 0) as total_diamonds,
         CASE
-          WHEN COALESCE(r.reward_count, 0) = 0 THEN '0'
-          WHEN COALESCE(r.reward_count, 0) = 1 THEN '1'
-          WHEN COALESCE(r.reward_count, 0) = 2 THEN '2'
-          WHEN COALESCE(r.reward_count, 0) BETWEEN 3 AND 4 THEN '3-4'
-          WHEN COALESCE(r.reward_count, 0) BETWEEN 5 AND 9 THEN '5-9'
-          ELSE '10+'
+          WHEN COALESCE(r.reward_count, 0)/1000 = 0 THEN '0'
+          WHEN COALESCE(r.reward_count, 0)/1000 = 1 THEN '1'
+          WHEN COALESCE(r.reward_count, 0)/1000 = 2 THEN '2'
+          WHEN COALESCE(r.reward_count, 0)/1000 BETWEEN 3 AND 4 THEN '3-4'
+          WHEN COALESCE(r.reward_count, 0)/1000 BETWEEN 5 AND 9 THEN '5-9'
+          WHEN COALESCE(r.reward_count, 0)/1000 >= 10 THEN '10+'
         END as count_bucket,
         CASE
-          WHEN COALESCE(r.total_diamonds, 0) = 0 THEN '0'
-          WHEN COALESCE(r.total_diamonds, 0) BETWEEN 1 AND 1000 THEN '1-1k'
-          WHEN COALESCE(r.total_diamonds, 0) BETWEEN 1001 AND 5000 THEN '1k-5k'
-          WHEN COALESCE(r.total_diamonds, 0) BETWEEN 5001 AND 10000 THEN '5k-10k'
+          WHEN COALESCE(r.total_diamonds, 0)/1000 = 0 THEN '0'
+          WHEN COALESCE(r.total_diamonds, 0)/1000 BETWEEN 1 AND 1000 THEN '1-1k'
+          WHEN COALESCE(r.total_diamonds, 0)/1000 BETWEEN 1001 AND 5000 THEN '1k-5k'
+          WHEN COALESCE(r.total_diamonds, 0)/1000 BETWEEN 5001 AND 10000 THEN '5k-10k'
           ELSE '10k-20k'
         END as diamonds_bucket
       FROM base_users b
@@ -1063,10 +1066,11 @@ export function getRewardDistributionQuery(days: number = 30) {
 export function getWithdrawTotalsQuery(days: number = 30) {
   return `
     WITH withdraw_events AS (
-      SELECT user_pseudo_id, COALESCE(event_value_in_usd, 0) as amount_usd
+      SELECT user_pseudo_id,
+        COALESCE(SAFE_CAST((SELECT value.string_value FROM UNNEST(event_params) WHERE key = 'withdraw_amount') AS INT64), 0) as amount_usd
       FROM \`${dataset()}.${table()}\`
       WHERE ${tableFilter(days)}
-        AND (event_name LIKE '%withdraw%' OR event_name LIKE '%payout%')
+        AND event_name = 'withdraw_result'
     ),
     per_user AS (
       SELECT user_pseudo_id, COUNT(*) as withdraw_count, SUM(amount_usd) as total_usd
@@ -1086,10 +1090,11 @@ export function getWithdrawTotalsQuery(days: number = 30) {
 export function getWithdrawDistributionQuery(days: number = 30) {
   return `
     WITH withdraw_events AS (
-      SELECT user_pseudo_id, COALESCE(event_value_in_usd, 0) as amount_usd
+      SELECT user_pseudo_id,
+        COALESCE(SAFE_CAST((SELECT value.string_value FROM UNNEST(event_params) WHERE key = 'withdraw_amount') AS INT64), 0) as amount_usd
       FROM \`${dataset()}.${table()}\`
       WHERE ${tableFilter(days)}
-        AND (event_name LIKE '%withdraw%' OR event_name LIKE '%payout%')
+        AND event_name = 'withdraw_result'
     ),
     per_user AS (
       SELECT user_pseudo_id, SUM(amount_usd) as total_usd
@@ -1352,11 +1357,9 @@ export function getReferralRewardQuery(days: number = 30) {
     senders AS (
       SELECT
         COUNT(DISTINCT CASE WHEN event_name IN (
-          'Click_InviteButton','Click_ShareInviteLink','Click_InviteViaText',
-          'Click_InviteSnapchat') THEN user_pseudo_id END) as invite_attempt_users,
+          'Click_InviteButton','Click_ShareInviteLink','Click_InviteViaText','Click_InviteSnapchat', 'Click_SelectedInviteFriends','Click_FindFriendInviteInviteButton') THEN user_pseudo_id END) as invite_attempt_users,
         COUNT(CASE WHEN event_name IN (
-          'Click_InviteButton','Click_ShareInviteLink','Click_InviteViaText',
-          'Click_InviteSnapchat') THEN 1 END) as invite_attempt_events,
+          'Click_InviteButton','Click_ShareInviteLink','Click_InviteViaText','Click_InviteSnapchat', 'Click_SelectedInviteFriends','Click_FindFriendInviteInviteButton') THEN 1 END) as invite_attempt_events,
         COUNT(DISTINCT CASE WHEN event_name = 'InviteFriendViaText_Success'
           THEN user_pseudo_id END) as invite_sent_users,
         COUNT(CASE WHEN event_name = 'InviteFriendViaText_Success'
@@ -1385,6 +1388,7 @@ export function getReferralRewardQuery(days: number = 30) {
         AND (
           LOWER(COALESCE(traffic_source.source, '')) IN ('getit','frog')
           OR LOWER(COALESCE(traffic_source.source, '')) LIKE '%frogcool%'
+          OR LOWER(COALESCE(traffic_source.source, '')) LIKE '%thefr.app%'
           OR LOWER(COALESCE(traffic_source.medium, '')) = 'referral'
           OR LOWER(COALESCE(traffic_source.source, '')) = 'appreferral'
         )
@@ -1433,23 +1437,22 @@ export function getSubscriptionAnalysisQuery(days: number = 30) {
           THEN user_pseudo_id END) as auto_convert_users,
         COUNT(DISTINCT CASE WHEN event_name = 'Click_CashWalletConfirmConvert'
           THEN user_pseudo_id END) as manual_convert_users,
-        COUNT(DISTINCT CASE WHEN (
-          event_name IN ('app_store_subscription_convert','app_store_subscription_renew')
+        COUNT(DISTINCT CASE WHEN event_name IN ('app_store_subscription_convert', 'app_store_subscription_renew')
           OR (event_name = 'iap_success' AND product_id = 'subscription')
-        ) THEN user_pseudo_id END) as paid_sub_users,
+          THEN user_pseudo_id END) as paid_sub_users,
         COUNT(DISTINCT CASE WHEN event_name = 'wallet_subscribe_success'
           THEN user_pseudo_id END) as wallet_sub_users,
         COUNT(DISTINCT CASE WHEN event_name = 'nonmember_exchange_hint'
           THEN user_pseudo_id END) as nonmember_hint_users,
         COUNT(DISTINCT CASE WHEN event_name = 'click_membership_entry'
           THEN user_pseudo_id END) as membership_entry_users,
-        COUNT(DISTINCT CASE WHEN (event_name = 'iap_start' AND product_id = 'subscription')
+        COUNT(DISTINCT CASE WHEN event_name = 'iap_start' AND product_id = 'subscription'
           THEN user_pseudo_id END) as iap_start_users,
         COUNT(DISTINCT CASE WHEN event_name = 'iap_fail'
           THEN user_pseudo_id END) as iap_fail_users,
-        COUNT(DISTINCT CASE WHEN (event_name = 'iap_start' AND product_id LIKE 'top-up%')
+        COUNT(DISTINCT CASE WHEN event_name = 'iap_start' AND product_id LIKE 'top-up%'
           THEN user_pseudo_id END) as topup_start_users,
-        COUNT(DISTINCT CASE WHEN (event_name = 'iap_success' AND product_id LIKE 'top-up%')
+        COUNT(DISTINCT CASE WHEN event_name = 'iap_success' AND product_id LIKE 'top-up%'
           THEN user_pseudo_id END) as topup_success_users
       FROM base
       GROUP BY 1, 2
@@ -1460,25 +1463,24 @@ export function getSubscriptionAnalysisQuery(days: number = 30) {
           THEN user_pseudo_id END) as total_auto_convert,
         COUNT(DISTINCT CASE WHEN event_name = 'Click_CashWalletConfirmConvert'
           THEN user_pseudo_id END) as total_manual_convert,
-        COUNT(DISTINCT CASE WHEN (
-          event_name IN ('app_store_subscription_convert','app_store_subscription_renew')
+        COUNT(DISTINCT CASE WHEN event_name IN ('app_store_subscription_convert','app_store_subscription_renew')
           OR (event_name = 'iap_success' AND product_id = 'subscription')
-        ) THEN user_pseudo_id END) as total_paid_sub,
+          THEN user_pseudo_id END) as total_paid_sub,
         COUNT(DISTINCT CASE WHEN event_name = 'wallet_subscribe_success'
           THEN user_pseudo_id END) as total_wallet_sub,
         COUNT(DISTINCT CASE WHEN event_name = 'nonmember_exchange_hint'
           THEN user_pseudo_id END) as total_nonmember_hint,
         COUNT(DISTINCT CASE WHEN event_name = 'click_membership_entry'
           THEN user_pseudo_id END) as total_membership_entry,
-        COUNT(DISTINCT CASE WHEN (event_name = 'iap_start' AND product_id = 'subscription')
+        COUNT(DISTINCT CASE WHEN event_name = 'iap_start' AND product_id = 'subscription'
           THEN user_pseudo_id END) as total_iap_start,
         COUNT(DISTINCT CASE WHEN event_name = 'iap_fail'
           THEN user_pseudo_id END) as total_iap_fail,
         COUNT(DISTINCT CASE WHEN event_name IN ('auto_convert_trigger',
           'Click_CashWalletConfirmConvert') THEN user_pseudo_id END) as total_exchange_users,
-        COUNT(DISTINCT CASE WHEN (event_name = 'iap_start' AND product_id LIKE 'top-up%')
+        COUNT(DISTINCT CASE WHEN event_name = 'iap_start' AND product_id LIKE 'top-up%'
           THEN user_pseudo_id END) as total_topup_start,
-        COUNT(DISTINCT CASE WHEN (event_name = 'iap_success' AND product_id LIKE 'top-up%')
+        COUNT(DISTINCT CASE WHEN event_name = 'iap_success' AND product_id LIKE 'top-up%'
           THEN user_pseudo_id END) as total_topup_success
       FROM base
     ),
@@ -1523,10 +1525,13 @@ export function getSubscriptionAnalysisQuery(days: number = 30) {
 export function getFlywheelQuery(days: number = 30) {
   return `
     WITH base AS (
-      SELECT user_pseudo_id, event_name, event_date,
+      SELECT user_pseudo_id, user_id, event_name, event_date,
         PARSE_DATE('%Y%m%d', event_date) as dt,
         (SELECT value.string_value FROM UNNEST(event_params) WHERE key = 'result') as result_val,
-        (SELECT value.string_value FROM UNNEST(event_params) WHERE key = 'reward_amount') as reward_amount
+        (SELECT value.string_value FROM UNNEST(event_params) WHERE key = 'reward_amount') as reward_amount,
+        (SELECT value.string_value FROM UNNEST(event_params) WHERE key = 'diamonds_amount') as diamonds_amount,
+        (SELECT value.string_value FROM UNNEST(event_params) WHERE key = 'result_status') as result_status,
+        (SELECT value.string_value FROM UNNEST(event_params) WHERE key = 'withdraw_amount') as withdraw_amount
       FROM \`${dataset()}.${table()}\`
       WHERE ${tableFilter(days)}
     ),
@@ -1547,23 +1552,21 @@ export function getFlywheelQuery(days: number = 30) {
       SELECT COUNT(DISTINCT b.user_pseudo_id) as registered_users
       FROM reg_base rb
       JOIN base b ON rb.user_pseudo_id = b.user_pseudo_id
-      WHERE b.event_name IN ('Success_GoogleRegister','Success_AppleRegister',
-        'Register_Email_Success','Register_Number_Success',
-        'Login_Email_Success','Login_Number_Success','signin_credit_earned',
-        'auth_submit_result','auth_oauth_result')
+      WHERE b.event_name IN ('Success_GoogleRegister','Register_Number_Success','Register_Email_Success','Success_AppleRegister')
+        OR (b.event_name = 'auth_oauth_result' AND b.result_val = 'success')
     ),
     -- Node 3: First Unlock
     first_unlockers AS (
       SELECT COUNT(DISTINCT b.user_pseudo_id) as first_unlock_users
       FROM reg_base rb
       JOIN base b ON rb.user_pseudo_id = b.user_pseudo_id
-      WHERE b.event_name IN ('video_unlock_success','dollarsup_first_unlock_success')
+      WHERE b.event_name IN ('dollarsup_first_unlock_success')
     ),
     -- Node 4: Unlock Loop (2+ unlocks)
     unlock_counts AS (
       SELECT user_pseudo_id, COUNT(*) as unlock_cnt
       FROM base
-      WHERE event_name IN ('video_unlock_success','dollarsup_first_unlock_success','video_click_unlock')
+      WHERE event_name IN ('video_unlock_success')
       GROUP BY 1
     ),
     loop_stats AS (
@@ -1579,12 +1582,12 @@ export function getFlywheelQuery(days: number = 30) {
     -- (includes manual scratch + auto-reward on $UP unlock; user need not scratch to get reward)
     scratch AS (
       SELECT
-        COUNT(DISTINCT CASE WHEN event_name LIKE '%scratch%' THEN user_pseudo_id END) as scratch_users,
+        COUNT(DISTINCT CASE WHEN event_name = 'scratch_reward_grant_result' THEN user_pseudo_id END) as scratch_users,
         COUNT(CASE WHEN event_name LIKE '%scratch%' THEN 1 END) as scratch_events,
-        COUNT(DISTINCT CASE WHEN reward_amount IS NOT NULL
-          AND SAFE_CAST(reward_amount AS INT64) BETWEEN 0 AND 20000 THEN user_pseudo_id END) as reward_users,
-        COALESCE(SUM(CASE WHEN reward_amount IS NOT NULL
-          AND SAFE_CAST(reward_amount AS INT64) BETWEEN 0 AND 20000 THEN SAFE_CAST(reward_amount AS INT64) END), 0) as total_diamonds
+        COUNT(DISTINCT CASE WHEN diamonds_amount IS NOT NULL
+          AND SAFE_CAST(diamonds_amount AS INT64) BETWEEN 0 AND 20000 THEN user_pseudo_id END) as reward_users,
+        COALESCE(SUM(CASE WHEN diamonds_amount IS NOT NULL
+          AND SAFE_CAST(diamonds_amount AS INT64) BETWEEN 0 AND 20000 THEN SAFE_CAST(diamonds_amount AS INT64) END), 0) as total_diamonds
       FROM base
     ),
     -- Node 6: Share (after scratch settlement page)
@@ -1603,11 +1606,10 @@ export function getFlywheelQuery(days: number = 30) {
     -- Node 7: Cashout / Withdrawal
     cashout AS (
       SELECT
-        COUNT(DISTINCT CASE WHEN event_name IN ('Click_CashWalletConfirmConvert',
-          'cash_exchange_success','Confirm_ConvertDiamondToCash') THEN user_pseudo_id END) as cashout_users,
-        COUNT(CASE WHEN event_name = 'cash_exchange_success' THEN 1 END) as cashout_success,
-        COALESCE(SUM(CASE WHEN event_name IN ('in_app_purchase','purchase')
-          THEN 0 END), 0) as withdrawal_usd
+        COUNT(DISTINCT CASE WHEN event_name = 'withdraw_click' THEN user_pseudo_id END) as cashout_users,
+        COUNT(CASE WHEN event_name = 'withdraw_result' AND result_status = 'success' THEN 1 END) as cashout_success,
+        COALESCE(SUM(CASE WHEN event_name = 'withdraw_result' AND result_status = 'success'
+          THEN SAFE_CAST(withdraw_amount AS INT64) END), 0) as withdrawal_usd
       FROM base
     ),
     -- Node 8: Referral / Invite + Dynamic Link landing
@@ -1618,11 +1620,12 @@ export function getFlywheelQuery(days: number = 30) {
         COUNT(DISTINCT CASE WHEN event_name IN (
           'Click_InviteButton','Click_ShareInviteLink','Click_InviteViaText',
           'Click_InviteSnapchat','scratch_share_click','Click_ShareCard',
-          'profile_top_button_click','other_profile_top_button_click'
+          'Click_SelectedInviteFriends','Click_FindFriendInviteInviteButton'
         ) THEN user_pseudo_id END) as all_share_users,
         COUNT(CASE WHEN event_name IN (
           'Click_InviteButton','Click_ShareInviteLink','Click_InviteViaText',
-          'Click_InviteSnapchat','scratch_share_click','Click_ShareCard'
+          'Click_InviteSnapchat','scratch_share_click','Click_ShareCard',
+          'Click_SelectedInviteFriends','Click_FindFriendInviteInviteButton'
         ) THEN 1 END) as all_share_clicks,
         -- Breakdown by method
         COUNT(DISTINCT CASE WHEN event_name = 'Click_InviteButton' THEN user_pseudo_id END) as invite_click_users,
@@ -1640,7 +1643,10 @@ export function getFlywheelQuery(days: number = 30) {
     ),
     -- Daily active users for rate calculations
     dau_stats AS (
-      SELECT COUNT(DISTINCT user_pseudo_id) as total_active FROM base
+      SELECT 
+        COUNT(DISTINCT user_pseudo_id) as total_pseudo_active,
+        COUNT(DISTINCT user_id) as total_active
+      FROM base
     ),
     -- Payers
     payer_stats AS (
@@ -1664,6 +1670,7 @@ export function getFlywheelQuery(days: number = 30) {
       ref.invite_success_users, ref.invite_success_events,
       ref.landing_show_users, ref.landing_click_users, ref.deeplink_open_users,
       dau.total_active,
+      dau.total_pseudo_active,
       p.payers, p.purchase_events
     FROM discovery d, registered r, first_unlockers fu, loop_stats ls,
       scratch s, share_stats sh, cashout c, referral ref, dau_stats dau, payer_stats p
