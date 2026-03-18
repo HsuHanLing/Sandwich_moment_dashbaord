@@ -144,7 +144,72 @@ export const METRIC_FORMULAS: Record<string, { formula: string; description: str
     formula: "SUM(reward_amount) / COUNT(reward events) WHERE event_name = 'scratch_result_view' AND reward_amount IN [0, 20000]",
     description: "Average diamond reward per scratch_result_view event. reward_amount extracted from event_params, filtered to 0–20k range.",
   },
-  // Content & Feed
+  // Content & Feed Performance (daily posts + SUP/$UP engagement with likes)
+  CONTENT_DAILY_POST_SUP: {
+    formula: "COUNTIF(event_name = 'PostedSup_Success') per day",
+    description: "Daily SUP post count: number of free short-form video posts published per day. Event: PostedSup_Success.",
+  },
+  CONTENT_DAILY_POST_UP: {
+    formula: "COUNTIF(event_name = 'Click_SendtoDollarSup') per day",
+    description: "Daily $UP post count: number of paid content submissions per day. Event: Click_SendtoDollarSup.",
+  },
+  CONTENT_DAILY_POST_SEQUEL: {
+    formula: "COUNTIF(event_name = 'Click_PostedSequel_success') per day",
+    description: "Daily Sequel post count: number of sequel/multi-part content posts per day. Event: Click_PostedSequel_success.",
+  },
+  CONTENT_SUP_EXPOSURE: {
+    formula: "COUNTIF(event_name = 'video_exposure' AND video_type = 'SUP')",
+    description: "SUP exposure count: video_exposure events where video_type = SUP. Exposure attribution uses video_id → video_type mapping from click/unlock events.",
+  },
+  CONTENT_SUP_CLICK_PLAY: {
+    formula: "COUNTIF(event_name = 'video_click_play' AND video_type = 'SUP')",
+    description: "SUP click-to-play count: user clicked to play a SUP video. Event: video_click_play with video_type = SUP.",
+  },
+  CONTENT_SUP_CLICK_RATE: {
+    formula: "video_click_play / video_exposure × 100% (SUP)",
+    description: "SUP click rate: % of SUP exposures that resulted in a click to play.",
+  },
+  CONTENT_SUP_LIKE_COUNT: {
+    formula: "COUNT(*) WHERE event_name IN ('click_like_button','LikeVideos_Success','LikePhotos_Success') AND video_type = 'SUP'",
+    description: "SUP like count: likes on SUP content. Events: click_like_button, LikeVideos_Success, LikePhotos_Success. video_type resolved via video_id join.",
+  },
+  CONTENT_SUP_LIKE_RATE: {
+    formula: "like_count / video_click_play × 100% (SUP)",
+    description: "SUP like rate: % of SUP click-to-play events that resulted in a like.",
+  },
+  CONTENT_UP_EXPOSURE: {
+    formula: "COUNTIF(event_name = 'video_exposure' AND video_type IN ('$UP','more_$up'))",
+    description: "$UP exposure count: video_exposure events where video_type is $UP or more_$up. Attribution via video_id mapping.",
+  },
+  CONTENT_UP_CLICK_UNLOCK: {
+    formula: "COUNTIF(event_name = 'video_click_unlock')",
+    description: "$UP click-unlock count: user clicked to unlock a paid video. Event: video_click_unlock.",
+  },
+  CONTENT_UP_UNLOCK_SUCCESS: {
+    formula: "COUNTIF(event_name = 'video_unlock_success')",
+    description: "$UP unlock success count: user completed payment and unlocked the video. Event: video_unlock_success.",
+  },
+  CONTENT_UP_CLICK_UNLOCK_RATE: {
+    formula: "video_click_unlock / video_exposure × 100% ($UP)",
+    description: "$UP click-unlock rate: % of $UP exposures that resulted in an unlock click.",
+  },
+  CONTENT_UP_UNLOCK_SUCCESS_RATE: {
+    formula: "video_unlock_success / video_click_unlock × 100% ($UP)",
+    description: "$UP unlock success rate: % of unlock clicks that completed payment.",
+  },
+  CONTENT_UP_REVENUE: {
+    formula: "SUM(SAFE_CAST(price AS FLOAT64)) WHERE event_name = 'video_unlock_success'",
+    description: "$UP revenue: total revenue from successful unlocks. price from event_params.",
+  },
+  CONTENT_UP_LIKE_COUNT: {
+    formula: "COUNT(*) WHERE event_name IN ('click_like_button','LikeVideos_Success','LikePhotos_Success') AND video_type IN ('$UP','more_$up')",
+    description: "$UP like count: likes on paid content. video_type resolved via video_id join.",
+  },
+  CONTENT_UP_LIKE_RATE: {
+    formula: "like_count / video_unlock_success × 100% ($UP)",
+    description: "$UP like rate: % of successful unlocks that resulted in a like.",
+  },
+  // Legacy Content & Feed (feed_area-based)
   FEED_IMPRESSIONS: {
     formula: "COUNTIF(event_name = 'video_exposure') per feed_area",
     description: "Total video impressions (video_exposure events) grouped by feed_area from event_params.",
@@ -323,6 +388,47 @@ export const METRIC_FORMULAS: Record<string, { formula: string; description: str
   FW_CASHOUT_RATE: {
     formula: "(Cashout users / Scratch users) × 100%",
     description: "% of scratch users who attempted to cash out via withdraw_click.",
+  },
+  // Creator Supply (KOL vs Influencer) — video_author_id based, includes like metrics
+  CREATOR_SUP_EXPOSURE: {
+    formula: "COUNTIF(event_name = 'video_exposure' AND video_type = 'SUP') per creator_type",
+    description: "SUP exposure for KOL/Influencer. Creator identified by video_author_id. Exposure attributed via video_id join (videos without click/unlock excluded).",
+  },
+  CREATOR_SUP_CLICK_PLAY: {
+    formula: "COUNTIF(event_name = 'video_click_play' AND video_type = 'SUP') per creator_type",
+    description: "SUP click-to-play count per creator. video_author_id from event_params.",
+  },
+  CREATOR_SUP_LIKE_COUNT: {
+    formula: "COUNTIF(event_name IN ('click_like_button','LikeVideos_Success','LikePhotos_Success') AND video_type = 'SUP') per creator_type",
+    description: "SUP like count per creator. Like events joined to video_author_map via video_id to resolve video_type and video_author_id.",
+  },
+  CREATOR_SUP_LIKE_RATE: {
+    formula: "like_count / video_click_play × 100% (SUP)",
+    description: "SUP like rate per creator: % of click-to-play events that resulted in a like.",
+  },
+  CREATOR_UP_EXPOSURE: {
+    formula: "COUNTIF(event_name = 'video_exposure' AND video_type IN ('$UP','more_$up')) per creator_type",
+    description: "$UP exposure per creator. Attribution via video_id mapping.",
+  },
+  CREATOR_UP_CLICK_UNLOCK: {
+    formula: "COUNTIF(event_name = 'video_click_unlock') per creator_type",
+    description: "$UP click-unlock count per creator.",
+  },
+  CREATOR_UP_UNLOCK_SUCCESS: {
+    formula: "COUNTIF(event_name = 'video_unlock_success') per creator_type",
+    description: "$UP unlock success count per creator.",
+  },
+  CREATOR_UP_REVENUE: {
+    formula: "SUM(price) WHERE event_name = 'video_unlock_success' per creator_type",
+    description: "$UP revenue per creator from successful unlocks.",
+  },
+  CREATOR_UP_LIKE_COUNT: {
+    formula: "COUNTIF(event_name IN ('click_like_button','LikeVideos_Success','LikePhotos_Success') AND video_type IN ('$UP','more_$up')) per creator_type",
+    description: "$UP like count per creator. video_type resolved via video_id join.",
+  },
+  CREATOR_UP_LIKE_RATE: {
+    formula: "like_count / video_unlock_success × 100% ($UP)",
+    description: "$UP like rate per creator: % of successful unlocks that resulted in a like.",
   },
   // Growth: Scratch / Reward / Withdraw behavior (distribution & totals)
   GROWTH_SCRATCH_DIST: {

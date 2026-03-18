@@ -11,6 +11,9 @@ interface CreatorRow {
   sup_click_play: number;
   sup_click_play_uv: number;
   sup_click_play_rate: number;
+  sup_like_count: number;
+  sup_like_uv: number;
+  sup_like_rate: number;
   up_exposure: number;
   up_exposure_uv: number;
   up_click_unlock: number;
@@ -21,6 +24,9 @@ interface CreatorRow {
   up_unlock_success_rate: number;
   up_overall_conversion_rate: number;
   up_revenue: number;
+  up_like_count: number;
+  up_like_uv: number;
+  up_like_rate: number;
   profile_exposure: number;
   profile_exposure_uv: number;
   circle_events: number;
@@ -42,6 +48,9 @@ function toMetrics(r: CreatorRow) {
     sup_click_play: num(r.sup_click_play),
     sup_click_play_uv: num(r.sup_click_play_uv),
     sup_click_play_rate: pct(r.sup_click_play_rate),
+    sup_like_count: num(r.sup_like_count),
+    sup_like_uv: num(r.sup_like_uv),
+    sup_like_rate: pct(r.sup_like_rate),
     up_exposure: num(r.up_exposure),
     up_exposure_uv: num(r.up_exposure_uv),
     up_click_unlock: num(r.up_click_unlock),
@@ -52,6 +61,9 @@ function toMetrics(r: CreatorRow) {
     up_unlock_success_rate: pct(r.up_unlock_success_rate),
     up_overall_conversion_rate: pct(r.up_overall_conversion_rate),
     up_revenue: Math.round(num(r.up_revenue) * 100) / 100,
+    up_like_count: num(r.up_like_count),
+    up_like_uv: num(r.up_like_uv),
+    up_like_rate: pct(r.up_like_rate),
     profile_exposure: num(r.profile_exposure),
     profile_exposure_uv: num(r.profile_exposure_uv),
     circle_events: num(r.circle_events),

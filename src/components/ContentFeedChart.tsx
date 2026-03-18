@@ -1,9 +1,8 @@
 "use client";
 
-import { useState } from "react";
 import {
-  BarChart,
-  Bar,
+  LineChart,
+  Line,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -11,118 +10,148 @@ import {
   ResponsiveContainer,
   Legend,
 } from "recharts";
-import { useLocale } from "@/contexts/LocaleContext";
-import { areaToDisplay } from "@/lib/area-names";
-import { METRIC_FORMULAS } from "@/lib/metric-formulas";
 
-type FeedRow = {
-  area: string;
-  impressions: number;
-  ctr: number;
-  completion: number | null;
-  replay: number | null;
+type DailyRow = { date: string; sup: number; up: number; sequel: number };
+
+type SupMetrics = {
+  exposure: number;
+  exposure_uv: number;
+  click_play: number;
+  click_play_uv: number;
+  click_rate: number;
+  like_count: number;
+  like_uv: number;
+  like_rate: number;
 };
 
-function formatPct(n: number | null) {
-  return n != null ? `${Number(n).toFixed(1)}%` : "-";
+type UpMetrics = {
+  exposure: number;
+  exposure_uv: number;
+  click_unlock: number;
+  click_unlock_uv: number;
+  unlock_success: number;
+  unlock_success_uv: number;
+  click_unlock_rate: number;
+  unlock_success_rate: number;
+  revenue: number;
+  like_count: number;
+  like_uv: number;
+  like_rate: number;
+};
+
+export type ContentFeedData = {
+  daily: DailyRow[];
+  sup: SupMetrics;
+  up: UpMetrics;
+};
+
+function fmt(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
+  return n.toLocaleString();
 }
 
-function ThWithTooltip({ label, metricKey }: { label: string; metricKey: string }) {
-  const [show, setShow] = useState(false);
-  const info = METRIC_FORMULAS[metricKey];
+export function ContentFeedChart({ data }: { data: ContentFeedData }) {
+  const { daily, sup, up } = data;
+
+  const supRows: { label: string; value: string }[] = [
+    { label: "Exposure (events)", value: fmt(sup.exposure) },
+    { label: "Exposure (UV)", value: fmt(sup.exposure_uv) },
+    { label: "Click Play (events)", value: fmt(sup.click_play) },
+    { label: "Click Play (UV)", value: fmt(sup.click_play_uv) },
+    { label: "Click Rate", value: `${sup.click_rate}%` },
+    { label: "Like Count", value: fmt(sup.like_count) },
+    { label: "Like UV", value: fmt(sup.like_uv) },
+    { label: "Like Rate (like / click play)", value: `${sup.like_rate}%` },
+  ];
+
+  const upRows: { label: string; value: string }[] = [
+    { label: "Exposure (events)", value: fmt(up.exposure) },
+    { label: "Exposure (UV)", value: fmt(up.exposure_uv) },
+    { label: "Click Unlock (events)", value: fmt(up.click_unlock) },
+    { label: "Click Unlock (UV)", value: fmt(up.click_unlock_uv) },
+    { label: "Unlock Success (events)", value: fmt(up.unlock_success) },
+    { label: "Unlock Success (UV)", value: fmt(up.unlock_success_uv) },
+    { label: "Click Unlock Rate", value: `${up.click_unlock_rate}%` },
+    { label: "Unlock Success Rate", value: `${up.unlock_success_rate}%` },
+    { label: "Revenue", value: `$${up.revenue.toLocaleString()}` },
+    { label: "Like Count", value: fmt(up.like_count) },
+    { label: "Like UV", value: fmt(up.like_uv) },
+    { label: "Like Rate (like / unlock success)", value: `${up.like_rate}%` },
+  ];
 
   return (
-    <th
-      className="relative px-3 py-2 text-right font-medium text-[var(--secondary-text)] tabular-nums"
-      onMouseEnter={() => setShow(true)}
-      onMouseLeave={() => setShow(false)}
-    >
-      <span className="cursor-help border-b border-dashed border-[var(--border)]">{label}</span>
-      {show && info && (
-        <div
-          className="absolute right-0 bottom-full z-[100] mb-1 w-56 rounded-md border border-[var(--border)] bg-[var(--card-bg)] px-2 py-1.5 text-left text-[9px] leading-snug"
-          style={{ boxShadow: "0 2px 8px rgba(0,0,0,0.12)" }}
-        >
-          <p className="font-semibold text-[var(--accent)]">{info.formula}</p>
-          <p className="mt-0.5 text-[var(--secondary-text)]">{info.description}</p>
+    <div className="space-y-5">
+      {/* Daily Post Count Line Chart */}
+      <div>
+        <h4 className="mb-2 text-xs font-medium text-[var(--secondary-text)]">Daily Post Count</h4>
+        <div className="h-[250px] w-full">
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart data={daily} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" opacity={0.5} />
+              <XAxis
+                dataKey="date"
+                tick={{ fontSize: 10, fill: "var(--secondary-text)" }}
+                axisLine={false}
+                tickLine={false}
+                tickFormatter={(v) => v.slice(5)}
+              />
+              <YAxis
+                tick={{ fontSize: 11, fill: "var(--secondary-text)" }}
+                axisLine={false}
+                tickLine={false}
+                allowDecimals={false}
+              />
+              <Tooltip
+                contentStyle={{
+                  borderRadius: "6px",
+                  border: "1px solid var(--border)",
+                  backgroundColor: "var(--card-bg)",
+                  padding: "4px 8px",
+                  fontSize: 11,
+                  lineHeight: 1.4,
+                }}
+              />
+              <Legend wrapperStyle={{ fontSize: 11 }} iconSize={10} />
+              <Line type="monotone" dataKey="sup" name="SUP" stroke="#4285f4" strokeWidth={2} dot={false} />
+              <Line type="monotone" dataKey="up" name="$UP" stroke="#ea4335" strokeWidth={2} dot={false} />
+              <Line type="monotone" dataKey="sequel" name="Sequel" stroke="#34a853" strokeWidth={2} dot={false} />
+            </LineChart>
+          </ResponsiveContainer>
         </div>
-      )}
-    </th>
-  );
-}
+      </div>
 
-function FeedTable({ title, rows, locale }: { title: string; rows: FeedRow[]; locale: string }) {
-  return (
-    <div>
-      <h4 className="mb-2 text-xs font-medium text-[var(--secondary-text)]">{title}</h4>
-      <table className="w-full text-[11px]">
-        <thead>
-          <tr className="border-b border-[var(--border)] bg-[var(--background)]">
-            <th className="px-3 py-2 text-left font-medium text-[var(--secondary-text)]">AREA</th>
-            <ThWithTooltip label="IMPRESSIONS" metricKey="FEED_IMPRESSIONS" />
-            <ThWithTooltip label="CTR" metricKey="FEED_CTR" />
-            <ThWithTooltip label="COMPLETION" metricKey="FEED_COMPLETION" />
-            <ThWithTooltip label="REPLAY" metricKey="FEED_REPLAY" />
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row) => (
-            <tr key={row.area} className="border-b border-[var(--border)]">
-              <td className="px-3 py-2">{areaToDisplay(row.area, locale)}</td>
-              <td className="px-3 py-2 text-right tabular-nums">
-                {row.impressions.toLocaleString()}
-              </td>
-              <td className="px-3 py-2 text-right tabular-nums">{formatPct(row.ctr)}</td>
-              <td className="px-3 py-2 text-right tabular-nums">{formatPct(row.completion)}</td>
-              <td className="px-3 py-2 text-right tabular-nums">{formatPct(row.replay)}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      {/* SUP Metrics Table */}
+      <MetricTable title="SUP Metrics (Free Content)" rows={supRows} />
+
+      {/* $UP Metrics Table */}
+      <MetricTable title="$UP Metrics (Paid Content)" rows={upRows} />
     </div>
   );
 }
 
-export function ContentFeedChart({
-  circle,
-  featureCards,
-  exclusives,
-}: {
-  circle: FeedRow[];
-  featureCards: FeedRow[];
-  exclusives: FeedRow[];
-}) {
-  const { t, locale } = useLocale();
-  const completionLabel = `${t("completionRate")} %`;
-  const chartData = [
-    ...circle.map((r) => ({ area: areaToDisplay(r.area, locale), ctr: r.ctr, completion: r.completion ?? 0 })),
-    ...featureCards.map((r) => ({ area: areaToDisplay(r.area, locale), ctr: r.ctr, completion: 0 })),
-    ...exclusives.map((r) => ({ area: areaToDisplay(r.area, locale), ctr: r.ctr, completion: r.completion ?? 0 })),
-  ].filter((d) => d.ctr > 0 || d.completion > 0);
-
+function MetricTable({ title, rows }: { title: string; rows: { label: string; value: string }[] }) {
   return (
-    <div>
-      <div className="mb-4 h-[280px] w-full">
-        <ResponsiveContainer width="100%" height="100%">
-          <BarChart data={chartData} margin={{ top: 5, right: 10, left: 0, bottom: 60 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" opacity={0.5} />
-            <XAxis dataKey="area" angle={-45} textAnchor="end" height={60} tick={{ fontSize: 10, fill: "var(--secondary-text)" }} axisLine={false} tickLine={false} />
-            <YAxis domain={[0, 100]} tick={{ fontSize: 10, fill: "var(--secondary-text)" }} axisLine={false} tickLine={false} />
-            <Tooltip
-              contentStyle={{ borderRadius: "6px", border: "1px solid var(--border)", backgroundColor: "var(--card-bg)", padding: "3px 6px", fontSize: 9, lineHeight: 1.3 }}
-              formatter={(value, name) => [`${Number(value ?? 0).toFixed(1)}%`, String(name) === "ctr" ? "CTR %" : completionLabel]}
-            />
-            <Legend wrapperStyle={{ fontSize: 9 }} iconSize={8} formatter={(v) => (v === "ctr" ? "CTR %" : completionLabel)} />
-            <Bar dataKey="ctr" fill="#4285f4" radius={[2, 2, 0, 0]} name="ctr" />
-            <Bar dataKey="completion" fill="#34a853" radius={[2, 2, 0, 0]} name="completion" />
-          </BarChart>
-        </ResponsiveContainer>
-      </div>
-      <div className="space-y-4 overflow-visible">
-        <FeedTable title="Circle" rows={circle} locale={locale} />
-        <FeedTable title={t("featureCards")} rows={featureCards} locale={locale} />
-        <FeedTable title={t("exclusives")} rows={exclusives} locale={locale} />
-      </div>
+    <div className="rounded-xl" style={{ border: "1px solid var(--card-stroke)" }}>
+      <table className="w-full text-[11px]">
+        <thead>
+          <tr className="border-b border-[var(--border)] bg-[var(--background)]">
+            <th className="px-3 py-2 text-left font-semibold text-[var(--secondary-text)]" colSpan={2}>{title}</th>
+          </tr>
+          <tr className="border-b border-[var(--border)] bg-[var(--background)]">
+            <th className="px-3 py-1.5 text-left font-medium text-[var(--secondary-text)]">METRIC</th>
+            <th className="px-3 py-1.5 text-right font-medium text-[var(--secondary-text)]">VALUE</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => (
+            <tr key={r.label} className="border-b border-[var(--border)]">
+              <td className="px-3 py-2">{r.label}</td>
+              <td className="px-3 py-2 text-right tabular-nums">{r.value}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }

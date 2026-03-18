@@ -500,42 +500,145 @@ export function getEconomyHealthQuery(days: number = 30, segment: string = "all"
   `;
 }
 
-// Content & Feed Performance (feed_impression, feed_click, video_complete, feature_card_type)
+// Content & Feed Performance
+// Part 1: daily post counts for Sup / $up / Sequel (line chart)
+// Part 2: SUP and $UP engagement metrics with likes (summary table)
 export function getContentFeedQuery(days: number = 30) {
   return `
-    WITH feed_areas AS (
+    -- Part 1: Daily post counts
+    WITH daily_posts AS (
       SELECT
-        COALESCE(
-          (SELECT value.string_value FROM UNNEST(e.event_params) WHERE key = 'source'),
-          'Other'
-        ) as area,
-        COUNTIF(e.event_name IN ('video_exposure')) as impressions,
-        COUNTIF(e.event_name IN ('video_click_play','video_click_unlock')) as clicks,
-        COUNTIF(e.event_name IN ('video_enter_fullscreen')) as video_enter_fullscreen,
-        COUNTIF(
-          e.event_name = 'video_play_end' AND 
-          EXISTS (
-            SELECT 1 FROM UNNEST(e.event_params) 
-            WHERE key = 'is_completed' 
-            AND (value.string_value = 'true' OR value.int_value = 1)
-          )
-        ) as video_completes,
-        COUNTIF(e.event_name IN ('more_up_continue')) as video_replays,
-        COUNT(DISTINCT e.user_pseudo_id) as users
-      FROM \`${dataset()}.${table()}\` e
+        FORMAT_DATE('%Y-%m-%d', PARSE_DATE('%Y%m%d', event_date)) as date_str,
+        COUNTIF(event_name = 'PostedSup_Success') as sup_posts,
+        COUNTIF(event_name = 'Click_SendtoDollarSup') as up_posts,
+        COUNTIF(event_name = 'Click_PostedSequel_success') as sequel_posts
+      FROM \`${dataset()}.${table()}\`
       WHERE ${tableFilter(days)}
-        AND e.event_name IN ('video_exposure','video_click_play','video_click_unlock','video_enter_fullscreen','video_play_end','more_up_continue')
+        AND event_name IN ('PostedSup_Success','Click_SendtoDollarSup','Click_PostedSequel_success')
       GROUP BY 1
+      ORDER BY 1
+    ),
+
+    -- video_id → video_author_id mapping (for exposure + like attribution)
+    video_author_map AS (
+      SELECT DISTINCT
+        (SELECT value.string_value FROM UNNEST(event_params) WHERE key = 'video_id') as video_id,
+        COALESCE(
+          (SELECT value.string_value FROM UNNEST(event_params) WHERE key = 'video_type'),
+          ''
+        ) as video_type
+      FROM \`${dataset()}.${table()}\`
+      WHERE ${tableFilter(days)}
+        AND event_name IN ('video_click_play','video_click_unlock','video_unlock_success')
+        AND (SELECT value.string_value FROM UNNEST(event_params) WHERE key = 'video_id') IS NOT NULL
+    ),
+
+    -- Part 2: Engagement events (exposure, click, unlock, like)
+    engagement AS (
+      SELECT
+        event_name,
+        COALESCE(
+          (SELECT value.string_value FROM UNNEST(event_params) WHERE key = 'video_type'),
+          ''
+        ) as video_type,
+        (SELECT value.string_value FROM UNNEST(event_params) WHERE key = 'price') as price,
+        (SELECT value.string_value FROM UNNEST(event_params) WHERE key = 'video_id') as video_id,
+        user_pseudo_id
+      FROM \`${dataset()}.${table()}\`
+      WHERE ${tableFilter(days)}
+        AND event_name IN (
+          'video_exposure','video_click_play','video_click_unlock','video_unlock_success',
+          'click_like_button','LikeVideos_Success','LikePhotos_Success'
+        )
+    ),
+
+    -- Resolve video_type for like events via video_id join
+    like_with_type AS (
+      SELECT
+        e.event_name,
+        COALESCE(vam.video_type, e.video_type) as video_type,
+        e.video_id,
+        e.user_pseudo_id
+      FROM engagement e
+      LEFT JOIN video_author_map vam ON e.video_id = vam.video_id
+      WHERE e.event_name IN ('click_like_button','LikeVideos_Success','LikePhotos_Success')
+    ),
+
+    -- SUP metrics
+    sup_metrics AS (
+      SELECT
+        COUNTIF(event_name = 'video_exposure' AND video_type = 'SUP') as exposure,
+        COUNT(DISTINCT CASE WHEN event_name = 'video_exposure' AND video_type = 'SUP'
+          THEN user_pseudo_id END) as exposure_uv,
+        COUNTIF(event_name = 'video_click_play' AND video_type = 'SUP') as click_play,
+        COUNT(DISTINCT CASE WHEN event_name = 'video_click_play' AND video_type = 'SUP'
+          THEN user_pseudo_id END) as click_play_uv,
+        SAFE_DIVIDE(
+          COUNTIF(event_name = 'video_click_play' AND video_type = 'SUP'),
+          NULLIF(COUNTIF(event_name = 'video_exposure' AND video_type = 'SUP'), 0)
+        ) * 100 as click_rate
+      FROM engagement
+    ),
+    sup_likes AS (
+      SELECT
+        COUNT(*) as like_count,
+        COUNT(DISTINCT user_pseudo_id) as like_uv
+      FROM like_with_type
+      WHERE video_type = 'SUP'
+    ),
+
+    -- $UP metrics
+    up_metrics AS (
+      SELECT
+        COUNTIF(event_name = 'video_exposure' AND video_type IN ('$UP','more_$up')) as exposure,
+        COUNT(DISTINCT CASE WHEN event_name = 'video_exposure' AND video_type IN ('$UP','more_$up')
+          THEN user_pseudo_id END) as exposure_uv,
+        COUNTIF(event_name = 'video_click_unlock') as click_unlock,
+        COUNT(DISTINCT CASE WHEN event_name = 'video_click_unlock'
+          THEN user_pseudo_id END) as click_unlock_uv,
+        COUNTIF(event_name = 'video_unlock_success') as unlock_success,
+        COUNT(DISTINCT CASE WHEN event_name = 'video_unlock_success'
+          THEN user_pseudo_id END) as unlock_success_uv,
+        SAFE_DIVIDE(
+          COUNTIF(event_name = 'video_click_unlock'),
+          NULLIF(COUNTIF(event_name = 'video_exposure' AND video_type IN ('$UP','more_$up')), 0)
+        ) * 100 as click_unlock_rate,
+        SAFE_DIVIDE(
+          COUNTIF(event_name = 'video_unlock_success'),
+          NULLIF(COUNTIF(event_name = 'video_click_unlock'), 0)
+        ) * 100 as unlock_success_rate,
+        COALESCE(SUM(CASE WHEN event_name = 'video_unlock_success'
+          THEN SAFE_CAST(price AS FLOAT64) END), 0) as revenue
+      FROM engagement
+    ),
+    up_likes AS (
+      SELECT
+        COUNT(*) as like_count,
+        COUNT(DISTINCT user_pseudo_id) as like_uv
+      FROM like_with_type
+      WHERE video_type IN ('$UP','more_$up')
     )
-    SELECT area, impressions, clicks, users,
-      video_starts, video_completes, video_replays,
-      SAFE_DIVIDE(clicks, NULLIF(impressions, 0)) * 100 as ctr,
-      SAFE_DIVIDE(video_completes, NULLIF(video_starts, 0)) * 100 as completion_rate,
-      SAFE_DIVIDE(video_replays, NULLIF(video_completes, 0)) * 100 as replay_rate
-    FROM feed_areas
-    WHERE impressions > 0
-    ORDER BY impressions DESC
-    LIMIT 20
+
+    -- Return daily posts + metrics in one result using a type column
+    SELECT 'daily' as result_type, date_str, sup_posts, up_posts, sequel_posts,
+      0 as sup_exposure, 0 as sup_exposure_uv, 0 as sup_click_play, 0 as sup_click_play_uv, 0.0 as sup_click_rate,
+      0 as sup_like_count, 0 as sup_like_uv, 0.0 as sup_like_rate,
+      0 as up_exposure, 0 as up_exposure_uv, 0 as up_click_unlock, 0 as up_click_unlock_uv,
+      0 as up_unlock_success, 0 as up_unlock_success_uv,
+      0.0 as up_click_unlock_rate, 0.0 as up_unlock_success_rate, 0.0 as up_revenue,
+      0 as up_like_count, 0 as up_like_uv, 0.0 as up_like_rate
+    FROM daily_posts
+    UNION ALL
+    SELECT 'metrics', NULL, 0, 0, 0,
+      s.exposure, s.exposure_uv, s.click_play, s.click_play_uv, s.click_rate,
+      sl.like_count, sl.like_uv,
+      SAFE_DIVIDE(sl.like_count, NULLIF(s.click_play, 0)) * 100,
+      u.exposure, u.exposure_uv, u.click_unlock, u.click_unlock_uv,
+      u.unlock_success, u.unlock_success_uv,
+      u.click_unlock_rate, u.unlock_success_rate, u.revenue,
+      ul.like_count, ul.like_uv,
+      SAFE_DIVIDE(ul.like_count, NULLIF(u.unlock_success, 0)) * 100
+    FROM sup_metrics s, sup_likes sl, up_metrics u, up_likes ul
   `;
 }
 
@@ -581,7 +684,7 @@ export function getGrowthFunnelQuery(days: number = 30) {
           'onb_scratchcard_grant'
         ) OR (b.event_name = 'scratch_guide_complete' AND b.result_val = 'success')
         THEN b.event_date END) as scratch_activated,
-        MIN(CASE WHEN b.event_name in ('PostedSup_Success', 'Click_PostedSup')
+        MIN(CASE WHEN b.event_name in ('PostedSup_Success')
           THEN b.event_date END) as first_sup,
         MIN(CASE WHEN b.event_name = 'Click_SendtoDollarSup'
           THEN b.event_date END) as first_up,
@@ -1382,11 +1485,12 @@ export function getCreatorSupplyQuery(days: number = 30) {
       )
     ),
 
-    -- video_id → video_author_id mapping from click/unlock events (one author per video)
+    -- video_id → video_author_id + video_type mapping from click/unlock events
     video_author_map AS (
       SELECT DISTINCT
         (SELECT value.string_value FROM UNNEST(event_params) WHERE key = 'video_id') as video_id,
-        (SELECT value.string_value FROM UNNEST(event_params) WHERE key = 'video_author_id') as video_author_id
+        (SELECT value.string_value FROM UNNEST(event_params) WHERE key = 'video_author_id') as video_author_id,
+        COALESCE((SELECT value.string_value FROM UNNEST(event_params) WHERE key = 'video_type'), '') as video_type
       FROM \`${dataset()}.${table()}\`
       WHERE ${tableFilter(days)}
         AND event_name IN ('video_click_play','video_click_unlock','video_unlock_success')
@@ -1426,11 +1530,30 @@ export function getCreatorSupplyQuery(days: number = 30) {
         AND e.event_name = 'video_exposure'
     ),
 
+    -- Like events: joined to video_author_map via video_id to resolve author + video_type
+    like_events AS (
+      SELECT
+        e.event_name,
+        e.user_pseudo_id,
+        vam.video_author_id,
+        COALESCE(vam.video_type, '') as video_type,
+        '' as source,
+        CAST(NULL AS STRING) as price,
+        (SELECT value.string_value FROM UNNEST(e.event_params) WHERE key = 'video_id') as video_id
+      FROM \`${dataset()}.${table()}\` e
+      JOIN video_author_map vam
+        ON (SELECT value.string_value FROM UNNEST(e.event_params) WHERE key = 'video_id') = vam.video_id
+      WHERE ${tableFilter(days)}
+        AND e.event_name IN ('click_like_button','LikeVideos_Success','LikePhotos_Success')
+    ),
+
     -- Union all events with a resolved video_author_id
     all_events AS (
       SELECT * FROM click_events WHERE video_author_id IS NOT NULL
       UNION ALL
       SELECT * FROM exposure_events WHERE video_author_id IS NOT NULL
+      UNION ALL
+      SELECT * FROM like_events WHERE video_author_id IS NOT NULL
     ),
 
     -- Join to creator classification
@@ -1479,6 +1602,26 @@ export function getCreatorSupplyQuery(days: number = 30) {
       ) * 100 as up_overall_conversion_rate,
       COALESCE(SUM(CASE WHEN event_name = 'video_unlock_success'
         THEN SAFE_CAST(price AS FLOAT64) END), 0) as up_revenue,
+
+      -- SUP likes
+      COUNTIF(event_name IN ('click_like_button','LikeVideos_Success','LikePhotos_Success')
+        AND video_type = 'SUP') as sup_like_count,
+      COUNT(DISTINCT CASE WHEN event_name IN ('click_like_button','LikeVideos_Success','LikePhotos_Success')
+        AND video_type = 'SUP' THEN user_pseudo_id END) as sup_like_uv,
+      SAFE_DIVIDE(
+        COUNTIF(event_name IN ('click_like_button','LikeVideos_Success','LikePhotos_Success') AND video_type = 'SUP'),
+        NULLIF(COUNTIF(event_name = 'video_click_play' AND video_type = 'SUP'), 0)
+      ) * 100 as sup_like_rate,
+
+      -- $UP likes
+      COUNTIF(event_name IN ('click_like_button','LikeVideos_Success','LikePhotos_Success')
+        AND video_type IN ('$UP','more_$up')) as up_like_count,
+      COUNT(DISTINCT CASE WHEN event_name IN ('click_like_button','LikeVideos_Success','LikePhotos_Success')
+        AND video_type IN ('$UP','more_$up') THEN user_pseudo_id END) as up_like_uv,
+      SAFE_DIVIDE(
+        COUNTIF(event_name IN ('click_like_button','LikeVideos_Success','LikePhotos_Success') AND video_type IN ('$UP','more_$up')),
+        NULLIF(COUNTIF(event_name = 'video_unlock_success'), 0)
+      ) * 100 as up_like_rate,
 
       -- Profile exposure (attributed via video_id mapping)
       COUNTIF(event_name = 'video_exposure' AND video_type = 'personal_profile') as profile_exposure,

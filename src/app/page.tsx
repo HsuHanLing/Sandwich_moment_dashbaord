@@ -13,6 +13,7 @@ import { RetentionRateChart } from "@/components/RetentionRateChart";
 import { MonetizationChart } from "@/components/MonetizationChart";
 import { EconomyHealthChart } from "@/components/EconomyHealthChart";
 import { ContentFeedChart } from "@/components/ContentFeedChart";
+import type { ContentFeedData } from "@/components/ContentFeedChart";
 import { AIChatWidget } from "@/components/AIChatWidget";
 import type { DashboardContext } from "@/components/AIChatWidget";
 import { UnlockInsightsSection } from "@/components/UnlockInsightsSection";
@@ -106,7 +107,7 @@ export default function DashboardPage() {
   const [economyHealth, setEconomyHealth] = useState<{ chart: { indicator: string; value: number; label: string }[]; metrics: { indicator: string; value: string }[]; segment?: string; active_users?: number } | null>(null);
   const [econSegment, setEconSegment] = useState<"all" | "paid">("all");
   const [econLoading, setEconLoading] = useState(false);
-  const [contentFeed, setContentFeed] = useState<{ circle: { area: string; impressions: number; ctr: number; completion: number | null; replay: number | null }[]; featureCards: { area: string; impressions: number; ctr: number; completion: number | null; replay: number | null }[]; exclusives: { area: string; impressions: number; ctr: number; completion: number | null; replay: number | null }[] } | null>(null);
+  const [contentFeed, setContentFeed] = useState<ContentFeedData | null>(null);
   const [unlockD7Retention, setUnlockD7Retention] = useState<{ total_unlock_users: number; d7_retained: number; rate: number } | null>(null);
   const [unlockDistribution, setUnlockDistribution] = useState<{ bucket: string; user_count: number; pct: number }[]>([]);
   const [unlockMeta, setUnlockMeta] = useState<{ days: number; cohort_start: string; cohort_end: string; distribution_total_users: number } | null>(null);
@@ -223,7 +224,7 @@ export default function DashboardPage() {
         if (retUnlock?.chart) setRetentionUnlock(retUnlock);
         if (Array.isArray(mon)) setMonetization(mon);
         if (eh?.chart && eh?.metrics) setEconomyHealth(eh);
-        if (cf?.circle && cf?.featureCards && cf?.exclusives) setContentFeed(cf);
+        if (cf?.daily && cf?.sup && cf?.up) setContentFeed(cf);
         if (um?.d7_retention) setUnlockD7Retention(um.d7_retention);
         if (Array.isArray(um?.distribution)) setUnlockDistribution(um.distribution);
         if (um?.cohort_start) setUnlockMeta({ days: um.days, cohort_start: um.cohort_start, cohort_end: um.cohort_end, distribution_total_users: um.distribution_total_users ?? 0 });
@@ -770,7 +771,7 @@ export default function DashboardPage() {
             </div>
             <p className="mt-0.5 text-xs text-[var(--secondary-text)]">{t("contentFeedDesc")}</p>
             {contentFeed ? (
-              <div className="mt-4"><ContentFeedChart circle={contentFeed.circle} featureCards={contentFeed.featureCards} exclusives={contentFeed.exclusives} /></div>
+              <div className="mt-4"><ContentFeedChart data={contentFeed} /></div>
             ) : (
               <p className="mt-4 text-xs text-[var(--secondary-text)]">{t("loadingText")}</p>
             )}

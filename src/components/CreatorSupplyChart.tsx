@@ -17,6 +17,9 @@ export type CreatorMetrics = {
   sup_click_play: number;
   sup_click_play_uv: number;
   sup_click_play_rate: number;
+  sup_like_count: number;
+  sup_like_uv: number;
+  sup_like_rate: number;
   up_exposure: number;
   up_exposure_uv: number;
   up_click_unlock: number;
@@ -27,6 +30,9 @@ export type CreatorMetrics = {
   up_unlock_success_rate: number;
   up_overall_conversion_rate: number;
   up_revenue: number;
+  up_like_count: number;
+  up_like_uv: number;
+  up_like_rate: number;
   profile_exposure: number;
   profile_exposure_uv: number;
   circle_events: number;
@@ -57,6 +63,9 @@ export function CreatorSupplyChart({ data }: { data: CreatorSupplyData }) {
     { label: "Click Play (events)", kol: fmt(kol.sup_click_play), inf: fmt(inf.sup_click_play) },
     { label: "Click Play (UV)", kol: fmt(kol.sup_click_play_uv), inf: fmt(inf.sup_click_play_uv) },
     { label: "Click Play Rate", kol: `${kol.sup_click_play_rate}%`, inf: `${inf.sup_click_play_rate}%` },
+    { label: "Like Count", kol: fmt(kol.sup_like_count), inf: fmt(inf.sup_like_count) },
+    { label: "Like UV", kol: fmt(kol.sup_like_uv), inf: fmt(inf.sup_like_uv) },
+    { label: "Like Rate (like / click play)", kol: `${kol.sup_like_rate}%`, inf: `${inf.sup_like_rate}%` },
   ];
 
   const upRows: { label: string; kol: string; inf: string }[] = [
@@ -70,6 +79,9 @@ export function CreatorSupplyChart({ data }: { data: CreatorSupplyData }) {
     { label: "Unlock Success Rate", kol: `${kol.up_unlock_success_rate}%`, inf: `${inf.up_unlock_success_rate}%` },
     { label: "Overall Conversion", kol: `${kol.up_overall_conversion_rate}%`, inf: `${inf.up_overall_conversion_rate}%` },
     { label: "Revenue", kol: `$${kol.up_revenue.toLocaleString()}`, inf: `$${inf.up_revenue.toLocaleString()}` },
+    { label: "Like Count", kol: fmt(kol.up_like_count), inf: fmt(inf.up_like_count) },
+    { label: "Like UV", kol: fmt(kol.up_like_uv), inf: fmt(inf.up_like_uv) },
+    { label: "Like Rate (like / unlock success)", kol: `${kol.up_like_rate}%`, inf: `${inf.up_like_rate}%` },
   ];
 
   const extraRows: { label: string; kol: string; inf: string }[] = [
