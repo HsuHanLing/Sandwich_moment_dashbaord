@@ -273,7 +273,8 @@ export function getDailyTrendQuery(days: number = 7, filters?: OverviewFilters) 
         FORMAT_DATE('%Y-%m-%d', PARSE_DATE('%Y%m%d', event_date)) as date,
         PARSE_DATE('%Y%m%d', event_date) as dt,
         COUNT(DISTINCT CASE WHEN event_name = 'first_open' THEN user_pseudo_id END) as new_users,
-        COUNT(DISTINCT user_pseudo_id) as dau,
+        COUNT(DISTINCT user_pseudo_id) as pseudo_dau,
+        COUNT(DISTINCT user_id) as dau,
         COUNT(DISTINCT CASE WHEN event_name IN ('purchase','in_app_purchase',
           'app_store_subscription_convert','app_store_subscription_renew', 'iap_success')
           THEN user_pseudo_id END) as payers,
@@ -282,11 +283,18 @@ export function getDailyTrendQuery(days: number = 7, filters?: OverviewFilters) 
           THEN event_value_in_usd END), 0) as revenue,
         COUNT(DISTINCT CASE WHEN event_name IN ('video_unlock_success','dollarsup_first_unlock_success') THEN user_pseudo_id END) as unlock_users,
         COUNT(DISTINCT CASE WHEN event_name IN ('video_unlock_success','dollarsup_first_unlock_success') THEN user_pseudo_id END) as unlock_users_base,
-        COALESCE(SUM(CASE WHEN event_name LIKE '%withdraw%' OR event_name LIKE '%payout%'
-          THEN event_value_in_usd END), 0) as withdrawal
+        COALESCE(SUM(
+        CASE WHEN event_name = 'withdraw_result' THEN 
+              COALESCE(
+                SAFE_CAST((SELECT value.string_value FROM UNNEST(event_params) WHERE key = 'withdraw_amount') AS FLOAT64),
+                (SELECT value.double_value FROM UNNEST(event_params) WHERE key = 'withdraw_amount'),
+                0
+              ) 
+            END
+          ), 0) as withdrawal
       FROM \`${dataset()}.${table()}\`
       WHERE ${tableFilter(days)}${extra}
-      GROUP BY event_date
+      GROUP BY 1, 2
     ),
     registration_daily AS (
       SELECT
@@ -305,7 +313,7 @@ export function getDailyTrendQuery(days: number = 7, filters?: OverviewFilters) 
           COUNT(*) as cnt
         FROM \`${dataset()}.${table()}\`
         WHERE ${tableFilter(days)}${extra}
-          AND event_name IN ('video_unlock_success','dollarsup_first_unlock_success','video_click_unlock')
+          AND event_name IN ('video_unlock_success','dollarsup_first_unlock_success')
         GROUP BY user_pseudo_id, event_date
         HAVING cnt >= 2
       )
@@ -448,14 +456,14 @@ export function getEconomyHealthQuery(days: number = 30, segment: string = "all"
         COUNT(*) as unlock_events,
         COUNT(DISTINCT user_pseudo_id) as unlock_users
       FROM base
-      WHERE event_name IN ('video_unlock_success','dollarsup_first_unlock_success')
+      WHERE event_name IN ('video_unlock_success')
     ),
     scratch_stats AS (
       SELECT
         COUNT(*) as scratch_events,
         COUNT(DISTINCT user_pseudo_id) as scratch_users
       FROM base
-      WHERE event_name LIKE '%scratch%'
+      WHERE event_name in ('scratch_result_view')
     ),
     scratch_rewards AS (
       SELECT
@@ -465,15 +473,16 @@ export function getEconomyHealthQuery(days: number = 30, segment: string = "all"
         SELECT
           (SELECT value.string_value FROM UNNEST(event_params) WHERE key = 'reward_amount') as reward_val
         FROM \`${dataset()}.${table()}\`
-        WHERE ${tableFilter(days)} ${paidFilter}
+        WHERE ${tableFilter(days)} and event_name in ('scratch_result_view')
       )
       WHERE reward_val IS NOT NULL AND SAFE_CAST(reward_val AS INT64) BETWEEN 0 AND 20000
     ),
     upgrade_stats AS (
       SELECT
         COUNT(DISTINCT user_pseudo_id) as upgrade_users
-      FROM base
-      WHERE event_name = 'scratch_upgrade_result'
+      FROM \`${dataset()}.${table()}\`
+      WHERE ${tableFilter(days)} ${paidFilter}
+        AND event_name = 'scratch_upgrade_result'
         AND EXISTS (
           SELECT 1 FROM UNNEST(event_params) 
           WHERE key = 'upgrade_status' AND value.string_value = 'insufficient_balance' 
@@ -497,18 +506,25 @@ export function getContentFeedQuery(days: number = 30) {
     WITH feed_areas AS (
       SELECT
         COALESCE(
-          (SELECT value.string_value FROM UNNEST(e.event_params) WHERE key = 'feed_area'),
-          (SELECT value.string_value FROM UNNEST(e.event_params) WHERE key = 'firebase_screen'),
-          'ForYou'
+          (SELECT value.string_value FROM UNNEST(e.event_params) WHERE key = 'source'),
+          'Other'
         ) as area,
-        COUNTIF(e.event_name IN ('screen_view', 'All_PageBehavior')) as impressions,
-        COUNTIF(e.event_name = 'Click_Sup' OR e.event_name LIKE '%click%') as clicks,
-        COUNTIF(e.event_name IN ('video_start', 'video_play', 'Click_Sup')) as video_starts,
-        COUNTIF(e.event_name IN ('video_complete', 'video_end', 'Video_Complete')) as video_completes,
-        COUNTIF(e.event_name IN ('video_replay', 'Video_Replay', 'replay')) as video_replays,
+        COUNTIF(e.event_name IN ('video_exposure')) as impressions,
+        COUNTIF(e.event_name IN ('video_click_play','video_click_unlock')) as clicks,
+        COUNTIF(e.event_name IN ('video_enter_fullscreen')) as video_enter_fullscreen,
+        COUNTIF(
+          e.event_name = 'video_play_end' AND 
+          EXISTS (
+            SELECT 1 FROM UNNEST(e.event_params) 
+            WHERE key = 'is_completed' 
+            AND (value.string_value = 'true' OR value.int_value = 1)
+          )
+        ) as video_completes,
+        COUNTIF(e.event_name IN ('more_up_continue')) as video_replays,
         COUNT(DISTINCT e.user_pseudo_id) as users
       FROM \`${dataset()}.${table()}\` e
       WHERE ${tableFilter(days)}
+        AND e.event_name IN ('video_exposure','video_click_play','video_click_unlock','video_enter_fullscreen','video_play_end','more_up_continue')
       GROUP BY 1
     )
     SELECT area, impressions, clicks, users,
@@ -539,7 +555,7 @@ export function getGrowthFunnelQuery(days: number = 30) {
     WITH base AS (
       SELECT user_pseudo_id, event_date, event_name, event_timestamp,
         (SELECT value.string_value FROM UNNEST(event_params) WHERE key = 'result') as result_val,
-        (SELECT value.string_value FROM UNNEST(event_params) WHERE key = 'feed_area') as feed_area
+        (SELECT value.string_value FROM UNNEST(event_params) WHERE key = 'source') as feed_area
       FROM \`${dataset()}.${table()}\`
       WHERE _TABLE_SUFFIX >= FORMAT_DATE('%Y%m%d', DATE_SUB(CURRENT_DATE(), INTERVAL ${days + 14} DAY))
         AND PARSE_DATE('%Y%m%d', event_date) >= DATE_SUB(CURRENT_DATE(), INTERVAL ${days + 14} DAY)
@@ -566,7 +582,6 @@ export function getGrowthFunnelQuery(days: number = 30) {
         ) OR (b.event_name = 'scratch_guide_complete' AND b.result_val = 'success')
         THEN b.event_date END) as scratch_activated,
         MIN(CASE WHEN b.event_name in ('PostedSup_Success', 'Click_PostedSup')
-          AND (b.feed_area IS NULL OR b.feed_area NOT LIKE '%$UP%')
           THEN b.event_date END) as first_sup,
         MIN(CASE WHEN b.event_name = 'Click_SendtoDollarSup'
           THEN b.event_date END) as first_up,
@@ -961,7 +976,7 @@ export function getScratchDistributionQuery(days: number = 30) {
     WITH base_users AS (
       SELECT DISTINCT user_pseudo_id
       FROM \`${dataset()}.${table()}\`
-      WHERE ${tableFilter(days)}
+      WHERE ${tableFilter(days)} AND event_name in ('scratch_result_view')
     ),
     scratch_per_user AS (
       SELECT user_pseudo_id,
@@ -1316,23 +1331,167 @@ export function getReferralTrackingQuery(days: number = 30) {
   `;
 }
 
-// Creator & Supply (KOL vs Regular)
+// Creator & Supply: KOL vs Influencer event-level performance
+//
+// Creator identification uses video_author_id from event_params.
+// video_click_play / video_click_unlock / video_unlock_success carry video_author_id directly.
+// video_exposure does NOT carry video_author_id — only video_id.
+// Exposure is attributed by joining a video_id → video_author_id mapping built from
+// click/unlock events.
+//
+// Known limitation:
+//   Exposure attribution is derived by joining video_exposure with click/unlock events
+//   via video_id. Videos that were only exposed but never clicked/unlocked cannot be
+//   mapped to a video_author_id and are excluded from the analysis.
+//   This may lead to an underestimation of total exposure, especially for low-engagement content.
 export function getCreatorSupplyQuery(days: number = 30) {
   return `
-    WITH creator_earnings AS (
-      SELECT
-        COALESCE(
-          (SELECT value.string_value FROM UNNEST(event_params) WHERE key = 'creator_type'),
-          'regular'
-        ) as creator_type,
-        SUM(event_value_in_usd) as earnings
+    -- KOL / Influencer user_id mapping (deduplicated)
+    WITH creator_map AS (
+      SELECT DISTINCT user_id, creator_type FROM (
+        SELECT user_id, 'KOL' as creator_type FROM UNNEST([
+          '26081301','45674424','35540478','23233279','41224657',
+          '16296585','11620748','66572866','73914763','89637312',
+          '75726889','38168147','31872462','59156123'
+        ]) as user_id
+        UNION ALL
+        SELECT user_id, 'Influencer' as creator_type FROM UNNEST([
+          '93219282','57689751','25978387','18062948','34810727',
+          '54375030','97596140','52821848','79264892','46905583',
+          '84386913','44879158','48462181','50998820','33682323',
+          '65630231','20576747','55672002','31765663','57645577',
+          '82681165','20886124','99899818','76328816','77876696',
+          '47323774','20755791','39855342','87433700','85340482',
+          '79487383','36099010','30311869','60055111','96288386',
+          '98264149','99387399','92341605','81165935','77189556',
+          '73867359','62271258','62311316','32296643','30345274',
+          '12901463','50359816','27587229','22371474','90961576',
+          '28159225','85817202','45287063','34466397',
+          '46914670','31097628','95315119','63694283','35085775',
+          '60051251','43458128','41256713','47154848','70028067',
+          '85436737','34956258','61781715','14483331','78955834',
+          '27269289','38491870','27050875','18491087','57869237',
+          '69055938','51269701','68199936','70338437','21693415',
+          '22516238','56477042','21779093','40743130','91223705',
+          '71320239','32656086','23175635','38425517','18299848',
+          '36021200','19609610','15100156','72700157',
+          '97380631','83083773','96950015','67272982','44866613',
+          '37009386','10235759','44286454','20988732','44092726',
+          '71161652','31041904','48936630','66570252','66918095','1808'
+        ]) as user_id
+      )
+    ),
+
+    -- video_id → video_author_id mapping from click/unlock events (one author per video)
+    video_author_map AS (
+      SELECT DISTINCT
+        (SELECT value.string_value FROM UNNEST(event_params) WHERE key = 'video_id') as video_id,
+        (SELECT value.string_value FROM UNNEST(event_params) WHERE key = 'video_author_id') as video_author_id
       FROM \`${dataset()}.${table()}\`
       WHERE ${tableFilter(days)}
-        AND event_name IN ('creator_earnings', 'withdrawal_request', 'unlock_event')
-      GROUP BY 1
+        AND event_name IN ('video_click_play','video_click_unlock','video_unlock_success')
+        AND (SELECT value.string_value FROM UNNEST(event_params) WHERE key = 'video_id') IS NOT NULL
+        AND (SELECT value.string_value FROM UNNEST(event_params) WHERE key = 'video_author_id') IS NOT NULL
+    ),
+
+    -- Click / unlock events: have video_author_id directly
+    click_events AS (
+      SELECT
+        event_name,
+        user_pseudo_id,
+        (SELECT value.string_value FROM UNNEST(event_params) WHERE key = 'video_author_id') as video_author_id,
+        COALESCE((SELECT value.string_value FROM UNNEST(event_params) WHERE key = 'video_type'), '') as video_type,
+        COALESCE((SELECT value.string_value FROM UNNEST(event_params) WHERE key = 'source'), '') as source,
+        (SELECT value.string_value FROM UNNEST(event_params) WHERE key = 'price') as price,
+        (SELECT value.string_value FROM UNNEST(event_params) WHERE key = 'video_id') as video_id
+      FROM \`${dataset()}.${table()}\`
+      WHERE ${tableFilter(days)}
+        AND event_name IN ('video_click_play','video_click_unlock','video_unlock_success')
+    ),
+
+    -- Exposure events: joined to video_author_map via video_id
+    exposure_events AS (
+      SELECT
+        e.event_name,
+        e.user_pseudo_id,
+        vam.video_author_id,
+        COALESCE((SELECT value.string_value FROM UNNEST(e.event_params) WHERE key = 'video_type'), '') as video_type,
+        COALESCE((SELECT value.string_value FROM UNNEST(e.event_params) WHERE key = 'source'), '') as source,
+        CAST(NULL AS STRING) as price,
+        (SELECT value.string_value FROM UNNEST(e.event_params) WHERE key = 'video_id') as video_id
+      FROM \`${dataset()}.${table()}\` e
+      JOIN video_author_map vam
+        ON (SELECT value.string_value FROM UNNEST(e.event_params) WHERE key = 'video_id') = vam.video_id
+      WHERE ${tableFilter(days)}
+        AND e.event_name = 'video_exposure'
+    ),
+
+    -- Union all events with a resolved video_author_id
+    all_events AS (
+      SELECT * FROM click_events WHERE video_author_id IS NOT NULL
+      UNION ALL
+      SELECT * FROM exposure_events WHERE video_author_id IS NOT NULL
+    ),
+
+    -- Join to creator classification
+    creator_events AS (
+      SELECT cm.creator_type, e.*
+      FROM all_events e
+      JOIN creator_map cm ON e.video_author_id = cm.user_id
     )
-    SELECT creator_type, earnings FROM creator_earnings
-    ORDER BY earnings DESC
+
+    SELECT
+      creator_type,
+
+      -- SUP volume
+      COUNTIF(event_name = 'video_exposure' AND video_type = 'SUP') as sup_exposure,
+      COUNT(DISTINCT CASE WHEN event_name = 'video_exposure' AND video_type = 'SUP'
+        THEN user_pseudo_id END) as sup_exposure_uv,
+      COUNTIF(event_name = 'video_click_play' AND video_type = 'SUP') as sup_click_play,
+      COUNT(DISTINCT CASE WHEN event_name = 'video_click_play' AND video_type = 'SUP'
+        THEN user_pseudo_id END) as sup_click_play_uv,
+      SAFE_DIVIDE(
+        COUNTIF(event_name = 'video_click_play' AND video_type = 'SUP'),
+        NULLIF(COUNTIF(event_name = 'video_exposure' AND video_type = 'SUP'), 0)
+      ) * 100 as sup_click_play_rate,
+
+      -- $UP volume (exposure includes more_$up / half-screen $UP)
+      COUNTIF(event_name = 'video_exposure' AND video_type IN ('$UP','more_$up')) as up_exposure,
+      COUNT(DISTINCT CASE WHEN event_name = 'video_exposure' AND video_type IN ('$UP','more_$up')
+        THEN user_pseudo_id END) as up_exposure_uv,
+      COUNTIF(event_name = 'video_click_unlock') as up_click_unlock,
+      COUNT(DISTINCT CASE WHEN event_name = 'video_click_unlock'
+        THEN user_pseudo_id END) as up_click_unlock_uv,
+      COUNTIF(event_name = 'video_unlock_success') as up_unlock_success,
+      COUNT(DISTINCT CASE WHEN event_name = 'video_unlock_success'
+        THEN user_pseudo_id END) as up_unlock_success_uv,
+      SAFE_DIVIDE(
+        COUNTIF(event_name = 'video_click_unlock'),
+        NULLIF(COUNTIF(event_name = 'video_exposure' AND video_type IN ('$UP','more_$up')), 0)
+      ) * 100 as up_click_unlock_rate,
+      SAFE_DIVIDE(
+        COUNTIF(event_name = 'video_unlock_success'),
+        NULLIF(COUNTIF(event_name = 'video_click_unlock'), 0)
+      ) * 100 as up_unlock_success_rate,
+      SAFE_DIVIDE(
+        COUNTIF(event_name = 'video_unlock_success'),
+        NULLIF(COUNTIF(event_name = 'video_exposure' AND video_type IN ('$UP','more_$up')), 0)
+      ) * 100 as up_overall_conversion_rate,
+      COALESCE(SUM(CASE WHEN event_name = 'video_unlock_success'
+        THEN SAFE_CAST(price AS FLOAT64) END), 0) as up_revenue,
+
+      -- Profile exposure (attributed via video_id mapping)
+      COUNTIF(event_name = 'video_exposure' AND video_type = 'personal_profile') as profile_exposure,
+      COUNT(DISTINCT CASE WHEN event_name = 'video_exposure' AND video_type = 'personal_profile'
+        THEN user_pseudo_id END) as profile_exposure_uv,
+
+      -- Source breakdown
+      COUNTIF(source = 'Circle') as circle_events,
+      COUNTIF(source = 'Explore') as explore_events
+
+    FROM creator_events
+    GROUP BY creator_type
+    ORDER BY creator_type
   `;
 }
 

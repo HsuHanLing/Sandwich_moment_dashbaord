@@ -7,6 +7,7 @@ import { DailyTrendTable } from "@/components/DailyTrendTable";
 import { UserAttributesChart } from "@/components/UserAttributesChart";
 import { GeoDistributionChart } from "@/components/GeoDistributionChart";
 import { CreatorSupplyChart } from "@/components/CreatorSupplyChart";
+import type { CreatorSupplyData } from "@/components/CreatorSupplyChart";
 import { GrowthFunnelChart } from "@/components/GrowthFunnelChart";
 import { RetentionRateChart } from "@/components/RetentionRateChart";
 import { MonetizationChart } from "@/components/MonetizationChart";
@@ -96,7 +97,7 @@ export default function DashboardPage() {
   const [error, setError] = useState<string | null>(null);
   const [userAttributes, setUserAttributes] = useState<{ age: { attr: string; users: number; share: number }[]; device: { attr: string; users: number; share: number }[] } | null>(null);
   const [geoDistribution, setGeoDistribution] = useState<{ region: string; region_name: string; users: number; share: number }[]>([]);
-  const [creatorSupply, setCreatorSupply] = useState<{ weekly: { week: string; kol_earnings: number; regular_earnings: number }[]; metrics: Record<string, number> } | null>(null);
+  const [creatorSupply, setCreatorSupply] = useState<CreatorSupplyData | null>(null);
   const [growthFunnel, setGrowthFunnel] = useState<{ step: string; stepLabel: string; users: number; conversion: number }[]>([]);
   const [retention, setRetention] = useState<{ chart: { day: string; rate: number; wow: number }[] }>({ chart: [] });
   const [retentionUnlock, setRetentionUnlock] = useState<{ chart: { day: string; rate: number; wow: number }[] }>({ chart: [] });
@@ -215,7 +216,7 @@ export default function DashboardPage() {
         ]);
         if (ua?.age && ua?.device) setUserAttributes(ua);
         if (Array.isArray(geo)) setGeoDistribution(geo);
-        if (cs?.weekly && cs?.metrics) setCreatorSupply(cs);
+        if (cs?.chart && cs?.data) setCreatorSupply(cs);
         if (Array.isArray(gf)) setGrowthFunnel(gf);
         if (regFunnel?.funnel) setRegistrationFunnelData(regFunnel);
         if (ret?.chart) setRetention(ret);
@@ -816,7 +817,7 @@ export default function DashboardPage() {
             </div>
             <p className="mt-0.5 text-xs text-[var(--secondary-text)]">{t("creatorSupplyDesc")}</p>
             {creatorSupply ? (
-              <div className="mt-4"><CreatorSupplyChart weekly={creatorSupply.weekly} metrics={creatorSupply.metrics} /></div>
+              <div className="mt-4"><CreatorSupplyChart data={creatorSupply} /></div>
             ) : (
               <p className="mt-4 text-xs text-[var(--secondary-text)]">{t("loadingText")}</p>
             )}
