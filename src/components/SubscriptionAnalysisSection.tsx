@@ -104,7 +104,13 @@ export function SubscriptionAnalysisSection({ kpi, daily, funnel, convertMethods
   const walletPct = totalSubscribers > 0 ? ((walletSub / totalSubscribers) * 100).toFixed(1) : "0";
   const iapSuccessRate = kpi.iap_start > 0 ? ((kpi.total_paid / kpi.iap_start) * 100).toFixed(1) : "0";
 
-  const methodLabels: Record<string, string> = { diamond: "Diamond → VIP", cash: "Cash → VIP", unknown: "Other" };
+  const methodLabels: Record<string, string> = {
+    diamond: "Diamond → coin",
+    cash: "Cash → coin",
+    "Diamond → VIP": "Diamond → coin",
+    "Cash → VIP": "Cash → coin",
+    unknown: "Other",
+  };
 
   return (
     <section className="mb-8">
@@ -223,6 +229,7 @@ export function SubscriptionAnalysisSection({ kpi, daily, funnel, convertMethods
                 </p>
               </div>
             </div>
+            <p className="mt-2 text-[9px] text-[var(--secondary-text)] italic">{t("subConvertNote")}</p>
             {convertMethods.length > 0 && (
               <div className="mt-3">
                 <p className="mb-1.5 text-[10px] font-medium text-[var(--secondary-text)]">{t("subConvertMethod")}</p>

@@ -25,6 +25,7 @@ export async function GET(request: Request) {
         date: String(r.date),
         new_users: Number(r.new_users ?? 0),
         registration: Number(r.registration ?? 0),
+        pseudo_dau: Number(r.pseudo_dau ?? 0),
         dau: Number(r.dau ?? 0),
         d1: d1Pct !== null ? `${d1Pct}%` : "—",
         d1_detail: cohortSize > 0 ? `${retainedD1}/${cohortSize}` : null,

@@ -77,7 +77,7 @@ function DayWithTooltip({ day, rate, wow }: { day: string; rate: number; wow: nu
   );
 }
 
-export function RetentionRateChart({ chart }: { chart: RetentionRow[] }) {
+export function RetentionRateChart({ chart, cohortType = "signup" }: { chart: RetentionRow[]; cohortType?: "signup" | "unlock" }) {
   const { t } = useLocale();
 
   if (!chart.length) {
@@ -162,7 +162,7 @@ export function RetentionRateChart({ chart }: { chart: RetentionRow[] }) {
         </table>
       </div>
       <p className="text-[10px] text-[var(--secondary-text)]">{t("retentionSuggestedChart")}</p>
-      <p className="text-[10px] text-[var(--secondary-text)] opacity-60">{t("retentionCohort")}</p>
+      <p className="text-[10px] text-[var(--secondary-text)] opacity-60">{t(cohortType === "unlock" ? "retentionCohortByUnlock" : "retentionCohortByRegistration")}</p>
     </div>
   );
 }

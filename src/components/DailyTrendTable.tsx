@@ -7,6 +7,7 @@ type Row = {
   date: string;
   new_users: number;
   registration: number;
+  pseudo_dau: number;
   dau: number;
   d1: string;
   d1_detail?: string | null;
@@ -38,6 +39,7 @@ function formatDate(d: string) {
 const HEADER_METRIC_KEYS: Record<string, string> = {
   NEW: "NEW",
   REGISTRATION: "DAILY_REGISTRATION",
+  "PSEUDO DAU": "PSEUDO_DAU",
   DAU: "DAU",
   D1: "D1_RETENTION",
   "UNLOCK USERS": "UNLOCK_USERS",
@@ -139,6 +141,7 @@ export function DailyTrendTable({ data }: { data: Row[] }) {
             <th className="px-3 py-2 text-left font-semibold text-[var(--secondary-text)]">DATE</th>
             <ThWithTooltip label="NEW" />
             <ThWithTooltip label="REGISTRATION" />
+            <ThWithTooltip label="PSEUDO DAU" />
             <ThWithTooltip label="DAU" />
             <ThWithTooltip label="D1" />
             <ThWithTooltip label="UNLOCK USERS" />
@@ -157,6 +160,7 @@ export function DailyTrendTable({ data }: { data: Row[] }) {
               <td className="px-3 py-2 font-medium text-[var(--foreground)]">{formatDate(row.date)}</td>
               <CellWithTooltip value={formatNum(row.new_users)} metricKey="NEW" />
               <CellWithTooltip value={formatNum(row.registration)} metricKey="DAILY_REGISTRATION" />
+              <CellWithTooltip value={formatNum(row.pseudo_dau)} metricKey="PSEUDO_DAU" />
               <CellWithTooltip value={formatNum(row.dau)} metricKey="DAU" />
               <D1CellWithTooltip d1={row.d1} d1_detail={row.d1_detail} />
               <CellWithTooltip value={formatNum(row.unlock_users)} metricKey="UNLOCK_USERS" />
