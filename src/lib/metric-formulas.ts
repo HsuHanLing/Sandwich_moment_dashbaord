@@ -13,7 +13,11 @@ export const METRIC_FORMULAS: Record<string, { formula: string; description: str
   },
   D1_RETENTION: {
     formula: "(Users who returned on D1 / Registered users on D0) × 100%",
-    description: "D1 Retention: % of registered users who came back the next day. Cohort: users who completed registration (Google/Apple/Email/Phone or auth_oauth_result success). Excludes HK/CN/SG.",
+    description: "D1 Retention (KPI): Registration cohort, excludes HK/CN/SG. Denominator = prev_day_registrations (yesterday's completed registrations). Numerator = retained_d1 (those who had any activity today). Use case: daily snapshot of registration→return. Same cohort as Growth Retention.",
+  },
+  D1_RETENTION_GROWTH: {
+    formula: "(Users active on D1 / Registered users on D0) × 100%",
+    description: "D1 Retention (Growth): Registration cohort, excludes HK/CN/SG (REG_GEO). Same cohort as KPI: REG_EVENTS + REG_GEO. Shows D1/D3/D7/D14 curve. Differs from KPI only by aggregation (30-day rolling vs daily snapshot).",
   },
   PAY_RATE: {
     formula: "(Paying users / DAU) × 100%",
@@ -98,22 +102,22 @@ export const METRIC_FORMULAS: Record<string, { formula: string; description: str
     formula: "(Users at step / First Open users) × 100%",
     description: "Conversion rate vs. first_open cohort base.",
   },
-  // Retention (cohort by signup)
+  // Retention (Growth: registration cohort + REG_GEO, same as KPI)
   RETENTION_D1: {
-    formula: "(Users who returned on day 1 / New users on D0) × 100%",
-    description: "D1 retention: % of cohort who had activity 1 day after signup.",
+    formula: "(Users active on D1 / Registered users on D0) × 100%",
+    description: "D1 retention (Growth chart): Registration cohort, excludes HK/CN/SG. D0 = registration date. Rate = % with any activity on D1. Same logic as D3/D7/D14.",
   },
   RETENTION_D3: {
-    formula: "(Users who returned on day 3 / New users on D0) × 100%",
-    description: "D3 retention: % of cohort who had activity 3 days after signup.",
+    formula: "(Users who returned on day 3 / Registered users on D0) × 100%",
+    description: "D3 retention: % of registration cohort (excl. HK/CN/SG) who had activity 3 days after registration.",
   },
   RETENTION_D7: {
-    formula: "(Users who returned on day 7 / New users on D0) × 100%",
-    description: "D7 retention: % of cohort who had activity 7 days after signup.",
+    formula: "(Users who returned on day 7 / Registered users on D0) × 100%",
+    description: "D7 retention: % of registration cohort (excl. HK/CN/SG) who had activity 7 days after registration.",
   },
   RETENTION_D14: {
-    formula: "(Users who returned on day 14 / New users on D0) × 100%",
-    description: "D14 retention: % of cohort who had activity 14 days after signup.",
+    formula: "(Users who returned on day 14 / Registered users on D0) × 100%",
+    description: "D14 retention: % of registration cohort (excl. HK/CN/SG) who had activity 14 days after registration.",
   },
   RETENTION_D21: {
     formula: "(Users who returned on day 21 / New users on D0) × 100%",
@@ -253,12 +257,12 @@ export const METRIC_FORMULAS: Record<string, { formula: string; description: str
   },
   // Subscription / VIP
   SUB_TOTAL: {
-    formula: "Exchange + Paid (real $) + Wallet (in-app cash)",
-    description: "Total subscribers: exchange (cash/diamond), real-money subscription, and wallet_subscribe_success (in-app cash wallet).",
+    formula: "Exchange + Paid (real $) + Wallet (in-app cash/diamond)",
+    description: "Total subscribers: exchange (Diamond→coin, Cash→coin; iOS only), real-money subscription, and wallet (in-app cash/diamond).",
   },
   SUB_EXCHANGE: {
     formula: "COUNT(DISTINCT user_pseudo_id) WHERE event_name IN ('auto_convert_trigger', 'Click_CashWalletConfirmConvert')",
-    description: "Users who converted to VIP by exchanging in-app cash or diamonds. Includes both auto-convert (triggered automatically) and manual convert (user initiated).",
+    description: "Users who converted to VIP by exchanging in-app balance. Convert methods: Diamond → coin, Cash → coin (convertMethod from event_params). Auto-convert = auto_convert_trigger; manual = Click_CashWalletConfirmConvert. IMPORTANT: Conversion feature is available on iOS only; not supported on Android.",
   },
   SUB_PAID: {
     formula: "COUNT(DISTINCT user_pseudo_id) WHERE event_name IN ('app_store_subscription_convert', 'app_store_subscription_renew') OR (iap_success AND product_id='subscription')",
@@ -266,7 +270,7 @@ export const METRIC_FORMULAS: Record<string, { formula: string; description: str
   },
   SUB_WALLET: {
     formula: "COUNT(DISTINCT user_pseudo_id) WHERE event_name = 'wallet_subscribe_success'",
-    description: "Users who subscribed using in-app cash wallet (not real money). Does not contribute to Paid Sub Revenue.",
+    description: "Users who subscribed using in-app cash or diamond balance (wallet_subscribe_success). Not real money. Does not contribute to Paid Sub Revenue.",
   },
   SUB_PAID_REVENUE: {
     formula: "SUM(event_value_in_usd) WHERE event_name IN ('purchase','in_app_purchase','app_store_subscription_convert','app_store_subscription_renew') AND (event_name IN ('app_store_subscription_convert','app_store_subscription_renew') OR product_type/item_category LIKE '%sub%' OR product_id='subscription')",
@@ -389,7 +393,11 @@ export const METRIC_FORMULAS: Record<string, { formula: string; description: str
     formula: "(Cashout users / Scratch users) × 100%",
     description: "% of scratch users who attempted to cash out via withdraw_click.",
   },
-  // Creator Supply (KOL vs Influencer) — video_author_id based, includes like metrics
+  // Creator Supply (KOL vs Influencer) — content production / supply performance
+  CREATOR_SUPPLY_OVERVIEW: {
+    formula: "KOL vs Influencer performance by video_author_id",
+    description: "Creator Supply measures creator content production/supply: exposure, clicks, unlocks, revenue, likes. Content types: SUP (free, video_type=SUP), $UP (paid, video_type=$UP/more_$up). Sequel is tracked in Content & Feed (daily posts), not here. Creators classified by user_id: KOL (14 IDs) or Influencer (106 IDs). Events: video_exposure, video_click_play, video_click_unlock, video_unlock_success, click_like_button, LikeVideos_Success, LikePhotos_Success. Limitation: video_exposure lacks video_author_id; we join via video_id→video_author_id from click/unlock. Videos only exposed (never clicked/unlocked) are excluded; total exposure may be underestimated.",
+  },
   CREATOR_SUP_EXPOSURE: {
     formula: "COUNTIF(event_name = 'video_exposure' AND video_type = 'SUP') per creator_type",
     description: "SUP exposure for KOL/Influencer. Creator identified by video_author_id. Exposure attributed via video_id join (videos without click/unlock excluded).",
@@ -432,16 +440,16 @@ export const METRIC_FORMULAS: Record<string, { formula: string; description: str
   },
   // Growth: Scratch / Reward / Withdraw behavior (distribution & totals)
   GROWTH_SCRATCH_DIST: {
-    formula: "Per user: COUNT(events) WHERE event_name = 'scratch_result_view'. Buckets: 0, 1, 2, 3, 4, 5-9, 10+.",
-    description: "Scratch count distribution: how many scratch_result_view events each user triggered in the selected period.",
+    formula: "Per user: COUNT(*) WHERE event_name IN ('scratch_result_view','scratch_reward_grant_result'). Buckets: 0, 1, 2, 3, 4, 5-9, 10+.",
+    description: "Scratch count distribution: among users with ≥1 scratch_result_view, count of scratch events (scratch_result_view + scratch_reward_grant_result) per user in period. Both events indicate scratch activity; bucketed by total count.",
   },
   GROWTH_REWARD_COUNT_DIST: {
-    formula: "Per user: reward_amount / 1000 from scratch_result_view events WHERE reward_amount IN [0, 20000]. Buckets: 0, 0.5, 1, 2, 3-4, 5-9, 10+.",
-    description: "Reward amount distribution per user. Amount from event_params.reward_amount on scratch_result_view events, divided by 1000 for bucketing. Cast to INT64 for counting, filtered by FLOAT64 range 0–20k.",
+    formula: "Per-event reward_amount/1000 from scratch_result_view + scratch_reward_grant_result. reward_amount from event_params (COALESCE reward_amount, diamonds_amount), FLOAT64, range [0, 20000]. Buckets: 0, 0.5, 1, 2, 3-4, 5-9, 10+.",
+    description: "Reward amount per event distribution (in thousands of diamonds). Events: scratch_result_view, scratch_reward_grant_result. Uses reward_amount or diamonds_amount from event_params. Each row = one reward event; count_bucket = amt/1000 bucketed.",
   },
   GROWTH_REWARD_DIAMONDS_DIST: {
-    formula: "Per user: SUM(reward_amount) from scratch_result_view events WHERE reward_amount IN [0, 20000]. Buckets: 0, 1-1k, 1k-5k, 5k-10k, 10k-20k diamonds.",
-    description: "Total diamonds received per user from scratch_result_view events with event_params.reward_amount in 0–20k range.",
+    formula: "Per user: SUM(reward_amount) from scratch_result_view + scratch_reward_grant_result WHERE reward_amount IN [0, 20000]. Buckets: 0, 1-1k, 1k-5k, 5k-10k, 10k-20k.",
+    description: "Total diamonds per user: SUM of reward_amount from events scratch_result_view and scratch_reward_grant_result. reward_amount/diamonds_amount from event_params, FLOAT64, filtered 0–20k.",
   },
   GROWTH_WITHDRAW_USERS: {
     formula: "COUNT(DISTINCT user_pseudo_id) WHERE event_name = 'withdraw_result'",

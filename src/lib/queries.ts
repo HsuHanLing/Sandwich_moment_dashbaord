@@ -348,6 +348,7 @@ export function getDailyTrendQuery(days: number = 7, filters?: OverviewFilters) 
       d.date,
       d.new_users,
       COALESCE(r.registration, 0) as registration,
+      d.pseudo_dau,
       d.dau,
       d.payers,
       d.revenue,
@@ -463,19 +464,19 @@ export function getEconomyHealthQuery(days: number = 30, segment: string = "all"
         COUNT(*) as scratch_events,
         COUNT(DISTINCT user_pseudo_id) as scratch_users
       FROM base
-      WHERE event_name in ('scratch_result_view')
+      WHERE event_name in ('scratch_result_view', 'scratch_reward_grant_result')
     ),
     scratch_rewards AS (
       SELECT
         COUNT(*) as reward_events,
-        COALESCE(SUM(SAFE_CAST(reward_val AS INT64)), 0) as reward_diamonds_total
+        COALESCE(SUM(reward_val), 0) as reward_diamonds_total
       FROM (
         SELECT
-          (SELECT value.string_value FROM UNNEST(event_params) WHERE key = 'reward_amount') as reward_val
+          COALESCE(SAFE_CAST((SELECT value.string_value FROM UNNEST(event_params) WHERE key = 'reward_amount') AS FLOAT64),SAFE_CAST((SELECT value.string_value FROM UNNEST(event_params) WHERE key = 'diamonds_amount') AS FLOAT64)) as reward_val
         FROM \`${dataset()}.${table()}\`
-        WHERE ${tableFilter(days)} and event_name in ('scratch_result_view')
+        WHERE ${tableFilter(days)} and event_name in ('scratch_result_view', 'scratch_reward_grant_result')
       )
-      WHERE reward_val IS NOT NULL AND SAFE_CAST(reward_val AS INT64) BETWEEN 0 AND 20000
+      WHERE reward_val IS NOT NULL AND reward_val BETWEEN 0 AND 20000
     ),
     upgrade_stats AS (
       SELECT
@@ -917,26 +918,26 @@ export function getRegistrationFunnelQuery(days: number = 30) {
   `;
 }
 
-// Retention: D1/D3/D7/D14 by signup cohort
+// Retention: D1/D3/D7/D14 by registration cohort (same as KPI: REG_GEO + REG_EVENTS)
 export function getRetentionQuery(days: number = 30) {
   return `
-    WITH signups AS (
-      SELECT user_pseudo_id, MIN(PARSE_DATE('%Y%m%d', event_date)) as signup_dt
+    WITH reg_users AS (
+      SELECT user_pseudo_id, MIN(PARSE_DATE('%Y%m%d', event_date)) as reg_dt
       FROM \`${dataset()}.${table()}\`
       WHERE _TABLE_SUFFIX >= FORMAT_DATE('%Y%m%d', DATE_SUB(CURRENT_DATE(), INTERVAL ${days + 14} DAY))
         AND PARSE_DATE('%Y%m%d', event_date) >= DATE_SUB(CURRENT_DATE(), INTERVAL ${days + 14} DAY)
-        AND event_name = 'first_open'
+        AND ${REG_GEO} AND ${REG_EVENTS}
       GROUP BY 1
-      HAVING signup_dt >= DATE_SUB(CURRENT_DATE(), INTERVAL ${days} DAY)
+      HAVING reg_dt >= DATE_SUB(CURRENT_DATE(), INTERVAL ${days} DAY)
     ),
     activity AS (
-      SELECT s.user_pseudo_id, s.signup_dt, b.event_date,
-        DATE_DIFF(PARSE_DATE('%Y%m%d', b.event_date), s.signup_dt, DAY) as day_num
-      FROM signups s
+      SELECT r.user_pseudo_id, r.reg_dt, b.event_date,
+        DATE_DIFF(PARSE_DATE('%Y%m%d', b.event_date), r.reg_dt, DAY) as day_num
+      FROM reg_users r
       JOIN \`${dataset()}.${table()}\` b
-        ON s.user_pseudo_id = b.user_pseudo_id
-        AND PARSE_DATE('%Y%m%d', b.event_date) > s.signup_dt
-        AND PARSE_DATE('%Y%m%d', b.event_date) <= DATE_ADD(s.signup_dt, INTERVAL 14 DAY)
+        ON r.user_pseudo_id = b.user_pseudo_id
+        AND PARSE_DATE('%Y%m%d', b.event_date) > r.reg_dt
+        AND PARSE_DATE('%Y%m%d', b.event_date) <= DATE_ADD(r.reg_dt, INTERVAL 14 DAY)
       WHERE _TABLE_SUFFIX >= FORMAT_DATE('%Y%m%d', DATE_SUB(CURRENT_DATE(), INTERVAL ${days + 14} DAY))
         AND PARSE_DATE('%Y%m%d', b.event_date) >= DATE_SUB(CURRENT_DATE(), INTERVAL ${days + 14} DAY)
       GROUP BY 1, 2, 3, 4
@@ -946,11 +947,11 @@ export function getRetentionQuery(days: number = 30) {
       FROM activity WHERE day_num IN (1, 3, 7, 14)
       GROUP BY 1
     ),
-    total_signups AS (SELECT COUNT(*) as n FROM signups)
+    total_cohort AS (SELECT COUNT(*) as n FROM reg_users)
     SELECT
       retained.day_num,
       retained.cnt as retained_users,
-      ROUND(100.0 * retained.cnt / NULLIF((SELECT n FROM total_signups), 0), 1) as rate
+      ROUND(100.0 * retained.cnt / NULLIF((SELECT n FROM total_cohort), 0), 1) as rate
     FROM retained
     ORDER BY retained.day_num
   `;
@@ -1084,10 +1085,10 @@ export function getScratchDistributionQuery(days: number = 30) {
     scratch_per_user AS (
       SELECT user_pseudo_id,
         COUNT(*) as scratch_count,
-        COUNTIF(event_name = 'scratch_result_view') as auto_count,
-        COUNTIF(event_name != 'scratch_result_view') as manual_count
+        COUNTIF(event_name in ('scratch_result_view', 'scratch_reward_grant_result')) as auto_count,
+        COUNTIF(event_name not in ('scratch_result_view', 'scratch_reward_grant_result')) as manual_count
       FROM \`${dataset()}.${table()}\`
-      WHERE ${tableFilter(days)} AND event_name in ('scratch_result_view')
+      WHERE ${tableFilter(days)} AND event_name in ('scratch_result_view', 'scratch_reward_grant_result')
       GROUP BY 1
     ),
     with_bucket AS (
@@ -1120,14 +1121,14 @@ export function getRewardDistributionQuery(days: number = 30) {
   return `
     WITH reward_events AS (
       SELECT user_pseudo_id,
-        (SELECT value.string_value FROM UNNEST(event_params) WHERE key = 'reward_amount') as reward_amount
+        COALESCE(SAFE_CAST((SELECT value.string_value FROM UNNEST(event_params) WHERE key = 'reward_amount') AS FLOAT64),SAFE_CAST((SELECT value.string_value FROM UNNEST(event_params) WHERE key = 'diamonds_amount') AS FLOAT64)) as reward_amount
       FROM \`${dataset()}.${table()}\`
-      WHERE ${tableFilter(days)} and event_name in ('scratch_result_view')
+      WHERE ${tableFilter(days)} and event_name in ('scratch_result_view', 'scratch_reward_grant_result')
     ),
     reward_filtered AS (
-      SELECT user_pseudo_id, SAFE_CAST(reward_amount AS INT64) as amt
+      SELECT user_pseudo_id, reward_amount as amt
       FROM reward_events
-      WHERE reward_amount IS NOT NULL AND SAFE_CAST(reward_amount AS FLOAT64) BETWEEN 0 AND 20000
+      WHERE reward_amount IS NOT NULL AND reward_amount BETWEEN 0 AND 20000
     ),
     per_user AS (
       SELECT user_pseudo_id,
