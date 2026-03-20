@@ -55,25 +55,19 @@ export function ContentFeedChart({ data }: { data: ContentFeedData }) {
   const { daily, sup, up } = data;
 
   const supRows: { label: string; value: string }[] = [
-    { label: "Exposure (events)", value: fmt(sup.exposure) },
-    { label: "Exposure (UV)", value: fmt(sup.exposure_uv) },
     { label: "Click Play (events)", value: fmt(sup.click_play) },
     { label: "Click Play (UV)", value: fmt(sup.click_play_uv) },
-    { label: "Click Rate", value: `${sup.click_rate}%` },
     { label: "Like Count", value: fmt(sup.like_count) },
     { label: "Like UV", value: fmt(sup.like_uv) },
     { label: "Like Rate (like / click play)", value: `${sup.like_rate}%` },
   ];
 
   const upRows: { label: string; value: string }[] = [
-    { label: "Exposure (events)", value: fmt(up.exposure) },
-    { label: "Exposure (UV)", value: fmt(up.exposure_uv) },
     { label: "Click Unlock (events)", value: fmt(up.click_unlock) },
     { label: "Click Unlock (UV)", value: fmt(up.click_unlock_uv) },
     { label: "Unlock Success (events)", value: fmt(up.unlock_success) },
     { label: "Unlock Success (UV)", value: fmt(up.unlock_success_uv) },
-    { label: "Click Unlock Rate", value: `${up.click_unlock_rate}%` },
-    { label: "Unlock Success Rate", value: `${up.unlock_success_rate}%` },
+    { label: "Unlock success / click unlock %", value: `${up.unlock_success_rate}%` },
     { label: "Revenue", value: `$${up.revenue.toLocaleString()}` },
     { label: "Like Count", value: fmt(up.like_count) },
     { label: "Like UV", value: fmt(up.like_uv) },

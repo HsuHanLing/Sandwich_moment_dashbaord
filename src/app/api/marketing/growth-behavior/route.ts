@@ -10,7 +10,7 @@ import {
 export const dynamic = "force-dynamic";
 
 const scratchBucketOrder = ["0", "1", "2", "3", "4", "5-9", "10+"];
-const rewardCountBucketOrder = ["0", "1", "2", "3-4", "5-9", "10+"];
+const rewardCountBucketOrder = ["0", "0.5", "500", "1", "2", "3-4", "5-9", "10+"];
 const rewardDiamondsBucketOrder = ["0", "1-1k", "1k-5k", "5k-10k", "10k-20k"];
 const withdrawBucketOrder = ["1-10", "10-50", "50-100", "100+"];
 

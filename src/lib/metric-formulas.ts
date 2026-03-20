@@ -162,16 +162,16 @@ export const METRIC_FORMULAS: Record<string, { formula: string; description: str
     description: "Daily Sequel post count: number of sequel/multi-part content posts per day. Event: Click_PostedSequel_success.",
   },
   CONTENT_SUP_EXPOSURE: {
-    formula: "COUNTIF(event_name = 'video_exposure' AND video_type = 'SUP')",
-    description: "SUP exposure count: video_exposure events where video_type = SUP. Exposure attribution uses video_id → video_type mapping from click/unlock events.",
+    formula: "(Deprecated) video_exposure no longer tracked — dashboard shows 0",
+    description: "SUP exposure was based on video_exposure; that event is no longer tracked. Use click play and like metrics instead.",
   },
   CONTENT_SUP_CLICK_PLAY: {
     formula: "COUNTIF(event_name = 'video_click_play' AND video_type = 'SUP')",
     description: "SUP click-to-play count: user clicked to play a SUP video. Event: video_click_play with video_type = SUP.",
   },
   CONTENT_SUP_CLICK_RATE: {
-    formula: "video_click_play / video_exposure × 100% (SUP)",
-    description: "SUP click rate: % of SUP exposures that resulted in a click to play.",
+    formula: "like_count / video_click_play × 100% (SUP)",
+    description: "SUP engagement: likes per click-to-play (video_exposure no longer tracked).",
   },
   CONTENT_SUP_LIKE_COUNT: {
     formula: "COUNT(*) WHERE event_name IN ('click_like_button','LikeVideos_Success','LikePhotos_Success') AND video_type = 'SUP'",
@@ -182,8 +182,8 @@ export const METRIC_FORMULAS: Record<string, { formula: string; description: str
     description: "SUP like rate: % of SUP click-to-play events that resulted in a like.",
   },
   CONTENT_UP_EXPOSURE: {
-    formula: "COUNTIF(event_name = 'video_exposure' AND video_type IN ('$UP','more_$up'))",
-    description: "$UP exposure count: video_exposure events where video_type is $UP or more_$up. Attribution via video_id mapping.",
+    formula: "(Deprecated) video_exposure no longer tracked — dashboard shows 0",
+    description: "$UP exposure was based on video_exposure; that event is no longer tracked. Use click unlock and unlock success instead.",
   },
   CONTENT_UP_CLICK_UNLOCK: {
     formula: "COUNTIF(event_name = 'video_click_unlock')",
@@ -194,8 +194,8 @@ export const METRIC_FORMULAS: Record<string, { formula: string; description: str
     description: "$UP unlock success count: user completed payment and unlocked the video. Event: video_unlock_success.",
   },
   CONTENT_UP_CLICK_UNLOCK_RATE: {
-    formula: "video_click_unlock / video_exposure × 100% ($UP)",
-    description: "$UP click-unlock rate: % of $UP exposures that resulted in an unlock click.",
+    formula: "video_unlock_success / video_click_unlock × 100% ($UP)",
+    description: "$UP funnel: successful unlocks as % of unlock clicks (no exposure denominator).",
   },
   CONTENT_UP_UNLOCK_SUCCESS_RATE: {
     formula: "video_unlock_success / video_click_unlock × 100% ($UP)",
@@ -215,12 +215,12 @@ export const METRIC_FORMULAS: Record<string, { formula: string; description: str
   },
   // Legacy Content & Feed (feed_area-based)
   FEED_IMPRESSIONS: {
-    formula: "COUNTIF(event_name = 'video_exposure') per feed_area",
-    description: "Total video impressions (video_exposure events) grouped by feed_area from event_params.",
+    formula: "(Legacy) video_exposure no longer tracked",
+    description: "Legacy feed impressions used video_exposure; that event is no longer tracked.",
   },
   FEED_CTR: {
-    formula: "(video_click_play + video_click_unlock) / video_exposure × 100%",
-    description: "Click-through rate: % of video impressions that resulted in a play or unlock click.",
+    formula: "(Legacy) CTR used video_exposure denominator",
+    description: "Legacy CTR used video_exposure; that event is no longer tracked.",
   },
   FEED_COMPLETION: {
     formula: "(video_play_end with is_completed=true / video_enter_fullscreen) × 100%",
@@ -396,11 +396,11 @@ export const METRIC_FORMULAS: Record<string, { formula: string; description: str
   // Creator Supply (KOL vs Influencer) — content production / supply performance
   CREATOR_SUPPLY_OVERVIEW: {
     formula: "KOL vs Influencer performance by video_author_id",
-    description: "Creator Supply measures creator content production/supply: exposure, clicks, unlocks, revenue, likes. Content types: SUP (free, video_type=SUP), $UP (paid, video_type=$UP/more_$up). Sequel is tracked in Content & Feed (daily posts), not here. Creators classified by user_id: KOL (14 IDs) or Influencer (106 IDs). Events: video_exposure, video_click_play, video_click_unlock, video_unlock_success, click_like_button, LikeVideos_Success, LikePhotos_Success. Limitation: video_exposure lacks video_author_id; we join via video_id→video_author_id from click/unlock. Videos only exposed (never clicked/unlocked) are excluded; total exposure may be underestimated.",
+    description: "Creator Supply: clicks, unlocks, revenue, likes per creator type (SUP / $UP). video_exposure is no longer tracked. Creators classified by user_id: KOL (14 IDs) or Influencer (106 IDs). Events: video_click_play, video_click_unlock, video_unlock_success, click_like_button, LikeVideos_Success, LikePhotos_Success. Attribution via video_author_id on click/unlock and video_id join for likes.",
   },
   CREATOR_SUP_EXPOSURE: {
-    formula: "COUNTIF(event_name = 'video_exposure' AND video_type = 'SUP') per creator_type",
-    description: "SUP exposure for KOL/Influencer. Creator identified by video_author_id. Exposure attributed via video_id join (videos without click/unlock excluded).",
+    formula: "(Deprecated) video_exposure no longer tracked — dashboard shows 0",
+    description: "SUP exposure used video_exposure; that event is no longer tracked.",
   },
   CREATOR_SUP_CLICK_PLAY: {
     formula: "COUNTIF(event_name = 'video_click_play' AND video_type = 'SUP') per creator_type",
@@ -415,8 +415,8 @@ export const METRIC_FORMULAS: Record<string, { formula: string; description: str
     description: "SUP like rate per creator: % of click-to-play events that resulted in a like.",
   },
   CREATOR_UP_EXPOSURE: {
-    formula: "COUNTIF(event_name = 'video_exposure' AND video_type IN ('$UP','more_$up')) per creator_type",
-    description: "$UP exposure per creator. Attribution via video_id mapping.",
+    formula: "(Deprecated) video_exposure no longer tracked — dashboard shows 0",
+    description: "$UP exposure used video_exposure; that event is no longer tracked.",
   },
   CREATOR_UP_CLICK_UNLOCK: {
     formula: "COUNTIF(event_name = 'video_click_unlock') per creator_type",
@@ -444,8 +444,8 @@ export const METRIC_FORMULAS: Record<string, { formula: string; description: str
     description: "Scratch count distribution: among users with ≥1 scratch_result_view, count of scratch events (scratch_result_view + scratch_reward_grant_result) per user in period. Both events indicate scratch activity; bucketed by total count.",
   },
   GROWTH_REWARD_COUNT_DIST: {
-    formula: "Per-event reward_amount/1000 from scratch_result_view + scratch_reward_grant_result. reward_amount from event_params (COALESCE reward_amount, diamonds_amount), FLOAT64, range [0, 20000]. Buckets: 0, 0.5, 1, 2, 3-4, 5-9, 10+.",
-    description: "Reward amount per event distribution (in thousands of diamonds). Events: scratch_result_view, scratch_reward_grant_result. Uses reward_amount or diamonds_amount from event_params. Each row = one reward event; count_bucket = amt/1000 bucketed.",
+    formula: "Per-event reward_amount (diamonds) from scratch_result_view + scratch_reward_grant_result. Buckets include explicit 500 (diamonds), 0, 0.5k, 1k, 2k, 3–4k, 5–9k, 10k+ by amt/1000 where applicable.",
+    description: "Reward amount per event distribution. Events: scratch_result_view, scratch_reward_grant_result. Uses reward_amount or diamonds_amount from event_params (FLOAT64, 0–20k). Includes a dedicated bucket for exactly 500 diamonds.",
   },
   GROWTH_REWARD_DIAMONDS_DIST: {
     formula: "Per user: SUM(reward_amount) from scratch_result_view + scratch_reward_grant_result WHERE reward_amount IN [0, 20000]. Buckets: 0, 1-1k, 1k-5k, 5k-10k, 10k-20k.",

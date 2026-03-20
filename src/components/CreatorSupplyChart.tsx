@@ -58,26 +58,19 @@ export function CreatorSupplyChart({ data }: { data: CreatorSupplyData }) {
   const inf = d.Influencer;
 
   const supRows: { label: string; kol: string; inf: string }[] = [
-    { label: "Exposure (events)", kol: fmt(kol.sup_exposure), inf: fmt(inf.sup_exposure) },
-    { label: "Exposure (UV)", kol: fmt(kol.sup_exposure_uv), inf: fmt(inf.sup_exposure_uv) },
     { label: "Click Play (events)", kol: fmt(kol.sup_click_play), inf: fmt(inf.sup_click_play) },
     { label: "Click Play (UV)", kol: fmt(kol.sup_click_play_uv), inf: fmt(inf.sup_click_play_uv) },
-    { label: "Click Play Rate", kol: `${kol.sup_click_play_rate}%`, inf: `${inf.sup_click_play_rate}%` },
     { label: "Like Count", kol: fmt(kol.sup_like_count), inf: fmt(inf.sup_like_count) },
     { label: "Like UV", kol: fmt(kol.sup_like_uv), inf: fmt(inf.sup_like_uv) },
     { label: "Like Rate (like / click play)", kol: `${kol.sup_like_rate}%`, inf: `${inf.sup_like_rate}%` },
   ];
 
   const upRows: { label: string; kol: string; inf: string }[] = [
-    { label: "Exposure (events)", kol: fmt(kol.up_exposure), inf: fmt(inf.up_exposure) },
-    { label: "Exposure (UV)", kol: fmt(kol.up_exposure_uv), inf: fmt(inf.up_exposure_uv) },
     { label: "Click Unlock (events)", kol: fmt(kol.up_click_unlock), inf: fmt(inf.up_click_unlock) },
     { label: "Click Unlock (UV)", kol: fmt(kol.up_click_unlock_uv), inf: fmt(inf.up_click_unlock_uv) },
     { label: "Unlock Success (events)", kol: fmt(kol.up_unlock_success), inf: fmt(inf.up_unlock_success) },
     { label: "Unlock Success (UV)", kol: fmt(kol.up_unlock_success_uv), inf: fmt(inf.up_unlock_success_uv) },
-    { label: "Click Unlock Rate", kol: `${kol.up_click_unlock_rate}%`, inf: `${inf.up_click_unlock_rate}%` },
-    { label: "Unlock Success Rate", kol: `${kol.up_unlock_success_rate}%`, inf: `${inf.up_unlock_success_rate}%` },
-    { label: "Overall Conversion", kol: `${kol.up_overall_conversion_rate}%`, inf: `${inf.up_overall_conversion_rate}%` },
+    { label: "Unlock success / click unlock %", kol: `${kol.up_unlock_success_rate}%`, inf: `${inf.up_unlock_success_rate}%` },
     { label: "Revenue", kol: `$${kol.up_revenue.toLocaleString()}`, inf: `$${inf.up_revenue.toLocaleString()}` },
     { label: "Like Count", kol: fmt(kol.up_like_count), inf: fmt(inf.up_like_count) },
     { label: "Like UV", kol: fmt(kol.up_like_uv), inf: fmt(inf.up_like_uv) },
@@ -85,8 +78,6 @@ export function CreatorSupplyChart({ data }: { data: CreatorSupplyData }) {
   ];
 
   const extraRows: { label: string; kol: string; inf: string }[] = [
-    { label: "Profile Exposure", kol: fmt(kol.profile_exposure), inf: fmt(inf.profile_exposure) },
-    { label: "Profile Exposure (UV)", kol: fmt(kol.profile_exposure_uv), inf: fmt(inf.profile_exposure_uv) },
     { label: "Circle Events", kol: fmt(kol.circle_events), inf: fmt(inf.circle_events) },
     { label: "Explore Events", kol: fmt(kol.explore_events), inf: fmt(inf.explore_events) },
   ];

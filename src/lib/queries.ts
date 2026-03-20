@@ -109,7 +109,7 @@ export function getVersionsQuery(days: number = 60) {
 
 // Custom event mapping from your data
 const EVENTS = {
-  impressions: "event_name = 'screen_view' OR event_name = 'All_PageBehavior'",
+  impressions: "event_name = 'All_PageBehavior'",
   clicks: "event_name = 'Click_Sup'",
   engagement: "event_name = 'user_engagement' OR event_name = 'LongPress_Sup'",
   appOpens: "event_name = 'Open_app'",
@@ -244,6 +244,7 @@ export function getKPIAndWowQuery(mode: "today" | "7d" | "30d", filters?: Overvi
         AND PARSE_DATE('%Y%m%d', b.event_date) = DATE_ADD(r.first_reg_dt, INTERVAL 1 DAY)
       WHERE _TABLE_SUFFIX >= FORMAT_DATE('%Y%m%d', DATE_SUB(CURRENT_DATE(), INTERVAL ${days + 7} DAY))
         AND PARSE_DATE('%Y%m%d', b.event_date) >= DATE_SUB(CURRENT_DATE(), INTERVAL ${days} DAY)${extra}
+        and b.event_name NOT IN ('notification_receive','notification_dismiss','app_remove')
       GROUP BY 1
     )
     SELECT
@@ -287,7 +288,6 @@ export function getDailyTrendQuery(days: number = 7, filters?: OverviewFilters) 
         CASE WHEN event_name = 'withdraw_result' THEN 
               COALESCE(
                 SAFE_CAST((SELECT value.string_value FROM UNNEST(event_params) WHERE key = 'withdraw_amount') AS FLOAT64),
-                (SELECT value.double_value FROM UNNEST(event_params) WHERE key = 'withdraw_amount'),
                 0
               ) 
             END
@@ -338,6 +338,7 @@ export function getDailyTrendQuery(days: number = 7, filters?: OverviewFilters) 
         FROM \`${dataset()}.${table()}\`
         WHERE _TABLE_SUFFIX >= FORMAT_DATE('%Y%m%d', DATE_SUB(CURRENT_DATE(), INTERVAL ${lookback} DAY))
           AND PARSE_DATE('%Y%m%d', event_date) >= DATE_SUB(CURRENT_DATE(), INTERVAL ${lookback} DAY)${extra}
+          AND event_name NOT IN ('notification_receive','notification_dismiss','app_remove')
       ) a ON r.user_pseudo_id = a.user_pseudo_id
         AND a.dt = DATE_ADD(r.first_reg_dt, INTERVAL 1 DAY)
       WHERE r.first_reg_dt >= DATE_SUB(CURRENT_DATE(), INTERVAL ${days} DAY)
@@ -534,7 +535,7 @@ export function getContentFeedQuery(days: number = 30) {
         AND (SELECT value.string_value FROM UNNEST(event_params) WHERE key = 'video_id') IS NOT NULL
     ),
 
-    -- Part 2: Engagement events (exposure, click, unlock, like)
+    -- Part 2: Engagement events (clicks, unlocks, likes only — video_exposure no longer tracked)
     engagement AS (
       SELECT
         event_name,
@@ -548,7 +549,7 @@ export function getContentFeedQuery(days: number = 30) {
       FROM \`${dataset()}.${table()}\`
       WHERE ${tableFilter(days)}
         AND event_name IN (
-          'video_exposure','video_click_play','video_click_unlock','video_unlock_success',
+          'video_click_play','video_click_unlock','video_unlock_success',
           'click_like_button','LikeVideos_Success','LikePhotos_Success'
         )
     ),
@@ -565,18 +566,17 @@ export function getContentFeedQuery(days: number = 30) {
       WHERE e.event_name IN ('click_like_button','LikeVideos_Success','LikePhotos_Success')
     ),
 
-    -- SUP metrics
+    -- SUP metrics (no exposure; click_rate = like engagement per click play)
     sup_metrics AS (
       SELECT
-        COUNTIF(event_name = 'video_exposure' AND video_type = 'SUP') as exposure,
-        COUNT(DISTINCT CASE WHEN event_name = 'video_exposure' AND video_type = 'SUP'
-          THEN user_pseudo_id END) as exposure_uv,
+        0 as exposure,
+        0 as exposure_uv,
         COUNTIF(event_name = 'video_click_play' AND video_type = 'SUP') as click_play,
         COUNT(DISTINCT CASE WHEN event_name = 'video_click_play' AND video_type = 'SUP'
           THEN user_pseudo_id END) as click_play_uv,
         SAFE_DIVIDE(
-          COUNTIF(event_name = 'video_click_play' AND video_type = 'SUP'),
-          NULLIF(COUNTIF(event_name = 'video_exposure' AND video_type = 'SUP'), 0)
+          (SELECT COUNT(*) FROM like_with_type WHERE video_type = 'SUP'),
+          NULLIF(COUNTIF(event_name = 'video_click_play' AND video_type = 'SUP'), 0)
         ) * 100 as click_rate
       FROM engagement
     ),
@@ -588,12 +588,11 @@ export function getContentFeedQuery(days: number = 30) {
       WHERE video_type = 'SUP'
     ),
 
-    -- $UP metrics
+    -- $UP metrics (no exposure; rates use click → unlock funnel only)
     up_metrics AS (
       SELECT
-        COUNTIF(event_name = 'video_exposure' AND video_type IN ('$UP','more_$up')) as exposure,
-        COUNT(DISTINCT CASE WHEN event_name = 'video_exposure' AND video_type IN ('$UP','more_$up')
-          THEN user_pseudo_id END) as exposure_uv,
+        0 as exposure,
+        0 as exposure_uv,
         COUNTIF(event_name = 'video_click_unlock') as click_unlock,
         COUNT(DISTINCT CASE WHEN event_name = 'video_click_unlock'
           THEN user_pseudo_id END) as click_unlock_uv,
@@ -601,8 +600,8 @@ export function getContentFeedQuery(days: number = 30) {
         COUNT(DISTINCT CASE WHEN event_name = 'video_unlock_success'
           THEN user_pseudo_id END) as unlock_success_uv,
         SAFE_DIVIDE(
-          COUNTIF(event_name = 'video_click_unlock'),
-          NULLIF(COUNTIF(event_name = 'video_exposure' AND video_type IN ('$UP','more_$up')), 0)
+          COUNTIF(event_name = 'video_unlock_success'),
+          NULLIF(COUNTIF(event_name = 'video_click_unlock'), 0)
         ) * 100 as click_unlock_rate,
         SAFE_DIVIDE(
           COUNTIF(event_name = 'video_unlock_success'),
@@ -745,7 +744,7 @@ export function getRegistrationRelatedEventsQuery(days: number = 30) {
         FROM \`${dataset()}.${table()}\`
         WHERE _TABLE_SUFFIX >= FORMAT_DATE('%Y%m%d', DATE_SUB(CURRENT_DATE(), INTERVAL ${days} DAY))
           AND PARSE_DATE('%Y%m%d', event_date) >= DATE_SUB(CURRENT_DATE(), INTERVAL ${days} DAY)
-          AND event_name IN ('screen_view', 'All_PageBehavior')
+          AND event_name IN ('All_PageBehavior')
         GROUP BY 1
       )
       WHERE LOWER(COALESCE(name,'')) LIKE '%registration%'
@@ -797,7 +796,7 @@ export function getRegistrationFunnelQuery(days: number = 30) {
       SELECT
         s.user_pseudo_id,
         s.country,
-        -- Any user action after open (click, submit, success — not passive views: screen_view / auth_screen_view)
+        -- Any user action after open (click, submit, success — not passive views: auth_screen_view)
         MIN(CASE
           WHEN b.event_name = 'auth_entry_click'
             OR b.event_name IN ('auth_nickname_next','auth_submit_result','auth_oauth_result','auth_method_switch')
@@ -816,7 +815,7 @@ export function getRegistrationFunnelQuery(days: number = 30) {
         -- Registered: all registration success events (aligned with growth funnel)
         MIN(CASE WHEN ${REG_EVENTS} THEN b.event_timestamp END) as reg_ts,
         -- Landed: first page view after any registration success
-        MIN(CASE WHEN b.event_name IN ('screen_view','All_PageBehavior','auth_screen_view')
+        MIN(CASE WHEN b.event_name IN ('All_PageBehavior','auth_screen_view')
           AND (SELECT MIN(b2.event_timestamp) FROM base b2
                WHERE b2.user_pseudo_id = s.user_pseudo_id AND ${REG_EVENTS_B2}
           ) IS NOT NULL
@@ -852,7 +851,7 @@ export function getRegistrationFunnelQuery(days: number = 30) {
         -- No-action expansion: 看视频 / 加好友 / 个人主页 / 拍摄 (land = enter_main already above)
         MIN(CASE WHEN b.event_name IN ('video_start','video_play','video_complete','video_end','Video_Complete','Click_Sup') THEN b.event_timestamp END) as watch_video_ts,
         MIN(CASE WHEN (b.event_name LIKE '%follow%' OR b.event_name LIKE '%friend%' OR b.event_name IN ('AddFriend_Success','click_follow_button','user_follow','InviteFriendViaText_Success','profile_top_button_click','other_profile_top_button_click')) THEN b.event_timestamp END) as add_friend_ts,
-        MIN(CASE WHEN b.event_name IN ('screen_view','All_PageBehavior','auth_screen_view')
+        MIN(CASE WHEN b.event_name IN ('All_PageBehavior','auth_screen_view')
           AND (LOWER(COALESCE(b.screen_name,'')) LIKE '%profile%' OR LOWER(COALESCE(b.screen_name,'')) IN ('my_profile','user_profile','profile','personal_home','me')) THEN b.event_timestamp END) as profile_view_ts,
         MIN(CASE WHEN (b.event_name LIKE '%record%' OR b.event_name LIKE '%shoot%' OR b.event_name LIKE '%capture%' OR b.event_name LIKE '%publish%' OR b.event_name LIKE '%post%' OR b.event_name LIKE '%Post%' OR b.event_name IN ('video_record_start','shoot_start','publish_video','create_video','record_start')) THEN b.event_timestamp END) as shooting_ts
       FROM first_opens s
@@ -939,7 +938,8 @@ export function getRetentionQuery(days: number = 30) {
         AND PARSE_DATE('%Y%m%d', b.event_date) > r.reg_dt
         AND PARSE_DATE('%Y%m%d', b.event_date) <= DATE_ADD(r.reg_dt, INTERVAL 14 DAY)
       WHERE _TABLE_SUFFIX >= FORMAT_DATE('%Y%m%d', DATE_SUB(CURRENT_DATE(), INTERVAL ${days + 14} DAY))
-        AND PARSE_DATE('%Y%m%d', b.event_date) >= DATE_SUB(CURRENT_DATE(), INTERVAL ${days + 14} DAY)
+        AND PARSE_DATE('%Y%m%d', b.event_date) >= DATE_SUB(CURRENT_DATE(), INTERVAL ${days + 14} DAY) 
+        AND b.event_name NOT IN ('notification_receive','notification_dismiss','app_remove')
       GROUP BY 1, 2, 3, 4
     ),
     retained AS (
@@ -980,6 +980,7 @@ export function getRetentionQueryUnlockCohort(days: number = 30) {
         AND PARSE_DATE('%Y%m%d', b.event_date) <= DATE_ADD(u.cohort_dt, INTERVAL 14 DAY)
       WHERE _TABLE_SUFFIX >= FORMAT_DATE('%Y%m%d', DATE_SUB(CURRENT_DATE(), INTERVAL ${lookback} DAY))
         AND PARSE_DATE('%Y%m%d', b.event_date) >= DATE_SUB(CURRENT_DATE(), INTERVAL ${lookback} DAY)
+        AND b.event_name NOT IN ('notification_receive','notification_dismiss','app_remove')
       GROUP BY 1, 2, 3, 4
     ),
     retained AS (
@@ -1006,7 +1007,7 @@ export function getUnlockD7RetentionQuery(days: number = 30) {
       FROM \`${dataset()}.${table()}\`
       WHERE _TABLE_SUFFIX >= FORMAT_DATE('%Y%m%d', DATE_SUB(CURRENT_DATE(), INTERVAL ${lookback} DAY))
         AND PARSE_DATE('%Y%m%d', event_date) >= DATE_SUB(CURRENT_DATE(), INTERVAL ${lookback} DAY)
-        AND event_name IN ('video_unlock_success','dollarsup_first_unlock_success','video_click_unlock')
+        AND event_name IN ('video_unlock_success','dollarsup_first_unlock_success')
       GROUP BY 1
       HAVING first_unlock_dt >= DATE_SUB(CURRENT_DATE(), INTERVAL ${days} DAY)
         AND first_unlock_dt <= DATE_SUB(CURRENT_DATE(), INTERVAL 7 DAY)
@@ -1016,7 +1017,8 @@ export function getUnlockD7RetentionQuery(days: number = 30) {
       FROM \`${dataset()}.${table()}\`
       WHERE _TABLE_SUFFIX >= FORMAT_DATE('%Y%m%d', DATE_SUB(CURRENT_DATE(), INTERVAL ${lookback} DAY))
         AND PARSE_DATE('%Y%m%d', event_date) >= DATE_SUB(CURRENT_DATE(), INTERVAL ${lookback} DAY)
-    )
+        AND event_name NOT IN ('notification_receive','notification_dismiss','app_remove')
+    ) 
     SELECT
       COUNT(DISTINCT u.user_pseudo_id) as total_unlock_users,
       COUNT(DISTINCT CASE WHEN a.dt IS NOT NULL THEN u.user_pseudo_id END) as d7_retained
@@ -1035,8 +1037,7 @@ export function getUnlockDistributionQuery(days: number = 30) {
       SELECT user_pseudo_id, MIN(PARSE_DATE('%Y%m%d', event_date)) as signup_dt
       FROM \`${dataset()}.${table()}\`
       WHERE _TABLE_SUFFIX >= FORMAT_DATE('%Y%m%d', DATE_SUB(CURRENT_DATE(), INTERVAL ${lookback} DAY))
-        AND PARSE_DATE('%Y%m%d', event_date) >= DATE_SUB(CURRENT_DATE(), INTERVAL ${lookback} DAY)
-        AND event_name = 'first_open'
+        AND ${REG_GEO} AND ${REG_EVENTS}
       GROUP BY 1
       HAVING signup_dt >= DATE_SUB(CURRENT_DATE(), INTERVAL ${days} DAY)
         AND signup_dt <= DATE_SUB(CURRENT_DATE(), INTERVAL 7 DAY)
@@ -1121,7 +1122,8 @@ export function getRewardDistributionQuery(days: number = 30) {
   return `
     WITH reward_events AS (
       SELECT user_pseudo_id,
-        COALESCE(SAFE_CAST((SELECT value.string_value FROM UNNEST(event_params) WHERE key = 'reward_amount') AS FLOAT64),SAFE_CAST((SELECT value.string_value FROM UNNEST(event_params) WHERE key = 'diamonds_amount') AS FLOAT64)) as reward_amount
+        COALESCE(SAFE_CAST((SELECT value.string_value FROM UNNEST(event_params) WHERE key = 'reward_amount') AS FLOAT64),
+        SAFE_CAST((SELECT value.string_value FROM UNNEST(event_params) WHERE key = 'diamonds_amount') AS FLOAT64)) as reward_amount
       FROM \`${dataset()}.${table()}\`
       WHERE ${tableFilter(days)} and event_name in ('scratch_result_view', 'scratch_reward_grant_result')
     ),
@@ -1142,6 +1144,7 @@ export function getRewardDistributionQuery(days: number = 30) {
         COALESCE(r.reward_count, 0) as reward_count,
         COALESCE(r.total_diamonds, 0) as total_diamonds,
         CASE
+          WHEN COALESCE(b.amt, 0) = 500 THEN '500'
           WHEN COALESCE(b.amt, 0)/1000 = 0 THEN '0'
           WHEN COALESCE(b.amt, 0)/500 = 1 THEN '0.5'
           WHEN COALESCE(b.amt, 0)/1000 = 1 THEN '1'
@@ -1307,6 +1310,7 @@ export function getPaidUsersD7RetentionQuery(days: number = 30) {
       FROM \`${dataset()}.${table()}\`
       WHERE _TABLE_SUFFIX >= FORMAT_DATE('%Y%m%d', DATE_SUB(CURRENT_DATE(), INTERVAL ${lookback} DAY))
         AND PARSE_DATE('%Y%m%d', event_date) >= DATE_SUB(CURRENT_DATE(), INTERVAL ${lookback} DAY)
+        AND event_name NOT IN ('notification_receive','notification_dismiss','app_remove')
     )
     SELECT
       COUNT(DISTINCT p.user_pseudo_id) as total_first_payers,
@@ -1439,15 +1443,7 @@ export function getReferralTrackingQuery(days: number = 30) {
 //
 // Creator identification uses video_author_id from event_params.
 // video_click_play / video_click_unlock / video_unlock_success carry video_author_id directly.
-// video_exposure does NOT carry video_author_id — only video_id.
-// Exposure is attributed by joining a video_id → video_author_id mapping built from
-// click/unlock events.
-//
-// Known limitation:
-//   Exposure attribution is derived by joining video_exposure with click/unlock events
-//   via video_id. Videos that were only exposed but never clicked/unlocked cannot be
-//   mapped to a video_author_id and are excluded from the analysis.
-//   This may lead to an underestimation of total exposure, especially for low-engagement content.
+// video_exposure is no longer tracked — metrics use clicks, unlocks, and likes only.
 export function getCreatorSupplyQuery(days: number = 30) {
   return `
     -- KOL / Influencer user_id mapping (deduplicated)
@@ -1514,23 +1510,6 @@ export function getCreatorSupplyQuery(days: number = 30) {
         AND event_name IN ('video_click_play','video_click_unlock','video_unlock_success')
     ),
 
-    -- Exposure events: joined to video_author_map via video_id
-    exposure_events AS (
-      SELECT
-        e.event_name,
-        e.user_pseudo_id,
-        vam.video_author_id,
-        COALESCE((SELECT value.string_value FROM UNNEST(e.event_params) WHERE key = 'video_type'), '') as video_type,
-        COALESCE((SELECT value.string_value FROM UNNEST(e.event_params) WHERE key = 'source'), '') as source,
-        CAST(NULL AS STRING) as price,
-        (SELECT value.string_value FROM UNNEST(e.event_params) WHERE key = 'video_id') as video_id
-      FROM \`${dataset()}.${table()}\` e
-      JOIN video_author_map vam
-        ON (SELECT value.string_value FROM UNNEST(e.event_params) WHERE key = 'video_id') = vam.video_id
-      WHERE ${tableFilter(days)}
-        AND e.event_name = 'video_exposure'
-    ),
-
     -- Like events: joined to video_author_map via video_id to resolve author + video_type
     like_events AS (
       SELECT
@@ -1567,22 +1546,20 @@ export function getCreatorSupplyQuery(days: number = 30) {
     SELECT
       creator_type,
 
-      -- SUP volume
-      COUNTIF(event_name = 'video_exposure' AND video_type = 'SUP') as sup_exposure,
-      COUNT(DISTINCT CASE WHEN event_name = 'video_exposure' AND video_type = 'SUP'
-        THEN user_pseudo_id END) as sup_exposure_uv,
+      -- SUP volume (no exposure; sup_exposure* kept as 0 for API shape)
+      0 as sup_exposure,
+      0 as sup_exposure_uv,
       COUNTIF(event_name = 'video_click_play' AND video_type = 'SUP') as sup_click_play,
       COUNT(DISTINCT CASE WHEN event_name = 'video_click_play' AND video_type = 'SUP'
         THEN user_pseudo_id END) as sup_click_play_uv,
       SAFE_DIVIDE(
-        COUNTIF(event_name = 'video_click_play' AND video_type = 'SUP'),
-        NULLIF(COUNTIF(event_name = 'video_exposure' AND video_type = 'SUP'), 0)
+        COUNTIF(event_name IN ('click_like_button','LikeVideos_Success','LikePhotos_Success') AND video_type = 'SUP'),
+        NULLIF(COUNTIF(event_name = 'video_click_play' AND video_type = 'SUP'), 0)
       ) * 100 as sup_click_play_rate,
 
-      -- $UP volume (exposure includes more_$up / half-screen $UP)
-      COUNTIF(event_name = 'video_exposure' AND video_type IN ('$UP','more_$up')) as up_exposure,
-      COUNT(DISTINCT CASE WHEN event_name = 'video_exposure' AND video_type IN ('$UP','more_$up')
-        THEN user_pseudo_id END) as up_exposure_uv,
+      -- $UP volume (click → unlock funnel; no exposure)
+      0 as up_exposure,
+      0 as up_exposure_uv,
       COUNTIF(event_name = 'video_click_unlock') as up_click_unlock,
       COUNT(DISTINCT CASE WHEN event_name = 'video_click_unlock'
         THEN user_pseudo_id END) as up_click_unlock_uv,
@@ -1590,8 +1567,8 @@ export function getCreatorSupplyQuery(days: number = 30) {
       COUNT(DISTINCT CASE WHEN event_name = 'video_unlock_success'
         THEN user_pseudo_id END) as up_unlock_success_uv,
       SAFE_DIVIDE(
-        COUNTIF(event_name = 'video_click_unlock'),
-        NULLIF(COUNTIF(event_name = 'video_exposure' AND video_type IN ('$UP','more_$up')), 0)
+        COUNTIF(event_name = 'video_unlock_success'),
+        NULLIF(COUNTIF(event_name = 'video_click_unlock'), 0)
       ) * 100 as up_click_unlock_rate,
       SAFE_DIVIDE(
         COUNTIF(event_name = 'video_unlock_success'),
@@ -1599,7 +1576,7 @@ export function getCreatorSupplyQuery(days: number = 30) {
       ) * 100 as up_unlock_success_rate,
       SAFE_DIVIDE(
         COUNTIF(event_name = 'video_unlock_success'),
-        NULLIF(COUNTIF(event_name = 'video_exposure' AND video_type IN ('$UP','more_$up')), 0)
+        NULLIF(COUNTIF(event_name = 'video_click_unlock'), 0)
       ) * 100 as up_overall_conversion_rate,
       COALESCE(SUM(CASE WHEN event_name = 'video_unlock_success'
         THEN SAFE_CAST(price AS FLOAT64) END), 0) as up_revenue,
@@ -1624,12 +1601,10 @@ export function getCreatorSupplyQuery(days: number = 30) {
         NULLIF(COUNTIF(event_name = 'video_unlock_success'), 0)
       ) * 100 as up_like_rate,
 
-      -- Profile exposure (attributed via video_id mapping)
-      COUNTIF(event_name = 'video_exposure' AND video_type = 'personal_profile') as profile_exposure,
-      COUNT(DISTINCT CASE WHEN event_name = 'video_exposure' AND video_type = 'personal_profile'
-        THEN user_pseudo_id END) as profile_exposure_uv,
+      0 as profile_exposure,
+      0 as profile_exposure_uv,
 
-      -- Source breakdown
+      -- Source breakdown (from click events only)
       COUNTIF(source = 'Circle') as circle_events,
       COUNTIF(source = 'Explore') as explore_events
 

@@ -88,12 +88,11 @@ export async function GET(request: Request) {
     const infMetrics = inf ? toMetrics(inf) : EMPTY_METRICS;
 
     const chart = [
-      { metric: "SUP Exposure", KOL: kolMetrics.sup_exposure, Influencer: infMetrics.sup_exposure },
       { metric: "SUP Click Play", KOL: kolMetrics.sup_click_play, Influencer: infMetrics.sup_click_play },
-      { metric: "$UP Exposure", KOL: kolMetrics.up_exposure, Influencer: infMetrics.up_exposure },
+      { metric: "SUP Likes", KOL: kolMetrics.sup_like_count, Influencer: infMetrics.sup_like_count },
       { metric: "$UP Click Unlock", KOL: kolMetrics.up_click_unlock, Influencer: infMetrics.up_click_unlock },
       { metric: "$UP Unlock Success", KOL: kolMetrics.up_unlock_success, Influencer: infMetrics.up_unlock_success },
-      { metric: "Profile Exposure", KOL: kolMetrics.profile_exposure, Influencer: infMetrics.profile_exposure },
+      { metric: "$UP Revenue", KOL: kolMetrics.up_revenue, Influencer: infMetrics.up_revenue },
     ];
 
     return NextResponse.json({
