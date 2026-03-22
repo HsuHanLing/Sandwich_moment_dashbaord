@@ -527,6 +527,10 @@ export default function StandupPage() {
             <a href="/" className="text-[11px] text-[var(--secondary-text)] hover:text-[var(--accent)]">
               ← Dashboard
             </a>
+            <span className="text-[var(--border)]">|</span>
+            <a href="/ops-daily" className="text-[11px] text-[var(--secondary-text)] hover:text-[var(--accent)]">
+              Ops Daily
+            </a>
             <h1 className="text-base font-semibold tracking-tight">Daily Standup</h1>
           </div>
           <div className="flex items-center gap-3">

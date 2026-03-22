@@ -305,6 +305,12 @@ export default function DashboardPage() {
             >
               Standup
             </a>
+            <a
+              href="/ops-daily"
+              className="rounded-full px-3 py-1.5 text-sm font-medium text-[var(--secondary-text)] hover:text-[var(--foreground)]"
+            >
+              Ops Daily
+            </a>
             {authEnabled && (
             <button
               onClick={async () => {
