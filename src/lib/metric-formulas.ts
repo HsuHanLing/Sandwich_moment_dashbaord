@@ -4,32 +4,42 @@
 
 export const METRIC_FORMULAS: Record<string, { formula: string; description: string }> = {
   PSEUDO_DAU: {
-    formula: "COUNT(DISTINCT user_pseudo_id) per day",
-    description: "Pseudo DAU: unique device-level users (user_pseudo_id) with any activity that day. Includes anonymous users who haven't logged in.",
+    formula: "COUNT(DISTINCT user_pseudo_id) per day (GA4 events_* ∪ events_intraday_*)",
+    description:
+      "Pseudo DAU: distinct user_pseudo_id with any event that calendar day. KPI and daily trend merge GA4 daily export tables (events_YYYYMMDD) with intraday (events_intraday_YYYYMMDD); when both exist for a date, the daily-export row is used so counts are not double-counted.",
   },
   DAU: {
-    formula: "COUNT(DISTINCT user_id) per day",
-    description: "Daily Active Users: unique logged-in users (user_id) with activity that day.",
+    formula:
+      "Daily shard: COUNT(DISTINCT user_id) WHERE event_name = 'Enter_NewUserLandSupPage'. Intraday-only days: COUNT(DISTINCT user_id) across events.",
+    description:
+      "Logged-in DAU: where the GA4 daily table has data for that date, counts distinct user_id on Enter_NewUserLandSupPage. On intraday-only dates (no daily shard yet), uses distinct user_id across all events. Same merge rule as Pseudo DAU (prefer daily shard when present).",
   },
   D1_RETENTION: {
-    formula: "(Users who returned on D1 / Registered users on D0) × 100%",
-    description: "D1 Retention (KPI): Registration cohort, excludes HK/CN/SG. Denominator = prev_day_registrations (yesterday's completed registrations). Numerator = retained_d1 (those who had any activity today). Use case: daily snapshot of registration→return. Same cohort as Growth Retention.",
+    formula:
+      "KPI: retained_d1 / LAG(registration). Daily trend row: retained_d1 / cohort_size (registrations that calendar day).",
+    description:
+      "Registration cohort: REG_EVENTS + REG_GEO (excl. Hong Kong, China, Singapore). Return on D+1 = at least one event on the day after registration, excluding only notification_receive, notification_dismiss, and app_remove (all other events count). KPI cards: denominator = previous day’s registrations; numerator = users who registered the day before the row date and qualified on the row date (return-date alignment). Daily trend table: each row is registration day D0; % = retained_d1 / registrations that day; tooltip shows retained/cohort. Cohorts too recent for a full D+1 window may show “—”. Same GA4 daily/intraday merge as other overview metrics.",
   },
   D1_RETENTION_GROWTH: {
-    formula: "(Users active on D1 / Registered users on D0) × 100%",
-    description: "D1 Retention (Growth): Registration cohort, excludes HK/CN/SG (REG_GEO). Same cohort as KPI: REG_EVENTS + REG_GEO. Shows D1/D3/D7/D14 curve. Differs from KPI only by aggregation (30-day rolling vs daily snapshot).",
+    formula: "(Users qualifying on D1 / Registered users on D0) × 100%",
+    description:
+      "Growth retention chart: same registration cohort and same D+1 activity rule as KPI (events on D+1 except notification_receive, notification_dismiss, app_remove). Shows D1/D3/D7/D14 as a curve over a rolling window; differs from the KPI snapshot mainly by time aggregation and chart window, not by cohort rules.",
   },
   PAY_RATE: {
     formula: "(Paying users / DAU) × 100%",
-    description: "Pay Rate: % of daily active users who made a purchase.",
+    description:
+      "KPI Pay Rate: paying users and DAU use the definitions above. Paying users = distinct user_pseudo_id with purchase, in_app_purchase, or iap_success (subscription convert/renew are not included in KPI payers).",
   },
   ARPPU: {
     formula: "Total Revenue / Paying users",
-    description: "Average Revenue Per Paying User.",
+    description:
+      "KPI ARPPU: revenue and payers both use purchase, in_app_purchase, and iap_success only (same scope as KPI Pay Rate).",
   },
   REVENUE: {
-    formula: "SUM(event_value_in_usd) WHERE event_name IN ('purchase','in_app_purchase','iap_success')",
-    description: "Total revenue from in-app purchases, including GA4 auto-tracked (purchase, in_app_purchase) and custom IAP success events (iap_success).",
+    formula:
+      "KPI: SUM(event_value_in_usd) for purchase, in_app_purchase, iap_success. Daily trend also includes app_store_subscription_convert and app_store_subscription_renew.",
+    description:
+      "KPI revenue: in-app purchase and IAP success events only. Daily trend “Revenue” column additionally includes App Store subscription convert and renew events. Amounts from event_value_in_usd where present.",
   },
   WITHDRAWAL: {
     formula: "SUM(SAFE_CAST(withdraw_amount AS FLOAT64)) WHERE event_name = 'withdraw_result'",
@@ -52,12 +62,16 @@ export const METRIC_FORMULAS: Record<string, { formula: string; description: str
     description: "Users who triggered at least one unlock: video_unlock_success (successful $UP unlock) or dollarsup_first_unlock_success (first-time newbie unlock).",
   },
   UNLOCK_GE2: {
-    formula: "COUNT(DISTINCT user_pseudo_id) WHERE unlock_count >= 2, events: video_unlock_success",
-    description: "Loop users: 2+ video_unlock_success actions. Indicates the unlock loop has formed.",
+    formula:
+      "COUNT(DISTINCT user_pseudo_id) with 2+ unlock events that day (video_unlock_success or dollarsup_first_unlock_success combined)",
+    description:
+      "Loop users: per calendar day, users with at least two unlock events counting both video_unlock_success and dollarsup_first_unlock_success. GA4 daily/intraday merge applies.",
   },
   PAYERS: {
-    formula: "COUNT(DISTINCT user_pseudo_id) with purchase event",
-    description: "Unique paying users per day.",
+    formula:
+      "KPI: purchase, in_app_purchase, iap_success. Daily trend: also app_store_subscription_convert, app_store_subscription_renew.",
+    description:
+      "Unique paying users per day. The KPI snapshot uses IAP-style purchase events only; the daily trend table adds App Store subscription convert/renew to align with subscription revenue in that column.",
   },
   UNLOCK_D7_RETENTION: {
     formula: "(Unlock users active on D+7 / Total unlock users in cohort) × 100%",
@@ -105,19 +119,23 @@ export const METRIC_FORMULAS: Record<string, { formula: string; description: str
   // Retention (Growth: registration cohort + REG_GEO, same as KPI)
   RETENTION_D1: {
     formula: "(Users active on D1 / Registered users on D0) × 100%",
-    description: "D1 retention (Growth chart): Registration cohort, excludes HK/CN/SG. D0 = registration date. Rate = % with any activity on D1. Same logic as D3/D7/D14.",
+    description:
+      "D1 retention (Growth chart): Registration cohort, excludes HK/CN/SG. D0 = registration date. Activity on Dn excludes notification_receive, notification_dismiss, and app_remove only. Same logic as D3/D7/D14.",
   },
   RETENTION_D3: {
     formula: "(Users who returned on day 3 / Registered users on D0) × 100%",
-    description: "D3 retention: % of registration cohort (excl. HK/CN/SG) who had activity 3 days after registration.",
+    description:
+      "D3 retention: % of registration cohort (excl. HK/CN/SG) with qualifying activity 3 days after registration (same event exclusions as D1).",
   },
   RETENTION_D7: {
     formula: "(Users who returned on day 7 / Registered users on D0) × 100%",
-    description: "D7 retention: % of registration cohort (excl. HK/CN/SG) who had activity 7 days after registration.",
+    description:
+      "D7 retention: % of registration cohort (excl. HK/CN/SG) with qualifying activity 7 days after registration (same event exclusions as D1).",
   },
   RETENTION_D14: {
     formula: "(Users who returned on day 14 / Registered users on D0) × 100%",
-    description: "D14 retention: % of registration cohort (excl. HK/CN/SG) who had activity 14 days after registration.",
+    description:
+      "D14 retention: % of registration cohort (excl. HK/CN/SG) with qualifying activity 14 days after registration (same event exclusions as D1).",
   },
   RETENTION_D21: {
     formula: "(Users who returned on day 21 / New users on D0) × 100%",
