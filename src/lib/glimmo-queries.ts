@@ -4,13 +4,20 @@
  * Subscription_pageview, collection_*, Insight_pageview, onboarding_*
  */
 
+import {
+  tableFilter as ga4TableFilter,
+  tableSuffixInRange,
+  tableSuffixSince,
+  tableFilterDailyOnly,
+  tableFilterIntradayOnly,
+} from "@/lib/queries";
+
 const dataset = () => process.env.GLIMMO_BIGQUERY_DATASET || "analytics_451348782";
 const table = () => process.env.GLIMMO_BIGQUERY_TABLE || "events_*";
 
+/** Same GA4 daily + intraday partition logic as marketing dashboard. */
 function tableFilter(days: number) {
-  return `_TABLE_SUFFIX BETWEEN FORMAT_DATE('%Y%m%d', DATE_SUB(CURRENT_DATE(), INTERVAL ${days} DAY))
-      AND FORMAT_DATE('%Y%m%d', CURRENT_DATE())
-      AND PARSE_DATE('%Y%m%d', event_date) >= DATE_SUB(CURRENT_DATE(), INTERVAL ${days} DAY)`;
+  return ga4TableFilter(days);
 }
 
 export type GlimmoFilters = {
@@ -36,6 +43,8 @@ export function getGlimmoKPIQuery(mode: "today" | "7d" | "30d", filters?: Glimmo
   const daysMap = { today: 1, "7d": 7, "30d": 30 };
   const days = daysMap[mode];
   const wowDays = days * 2;
+  const wowSuffixLow = `FORMAT_DATE('%Y%m%d', DATE_SUB(CURRENT_DATE(), INTERVAL ${wowDays} DAY))`;
+  const wowSuffixHigh = `FORMAT_DATE('%Y%m%d', CURRENT_DATE())`;
 
   return `
     WITH period AS (
@@ -64,8 +73,7 @@ export function getGlimmoKPIQuery(mode: "today" | "7d" | "30d", filters?: Glimmo
         COUNT(DISTINCT CASE WHEN PARSE_DATE('%Y%m%d', event_date) BETWEEN DATE_SUB(CURRENT_DATE(), INTERVAL ${wowDays} DAY) AND DATE_SUB(CURRENT_DATE(), INTERVAL ${days + 1} DAY)
           AND event_name = 'Subscription_pageview' THEN user_pseudo_id END) AS wow_sub_viewers
       FROM \`${dataset()}.${table()}\`
-      WHERE _TABLE_SUFFIX BETWEEN FORMAT_DATE('%Y%m%d', DATE_SUB(CURRENT_DATE(), INTERVAL ${wowDays} DAY))
-        AND FORMAT_DATE('%Y%m%d', CURRENT_DATE())
+      WHERE ${tableSuffixInRange(wowSuffixLow, wowSuffixHigh)}
         ${extra}
     ),
     retention AS (
@@ -95,8 +103,7 @@ export function getGlimmoKPIQuery(mode: "today" | "7d" | "30d", filters?: Glimmo
 // ─── Daily Trend ───────────────────────────────────────────────────────
 export function getGlimmoDailyTrendQuery(days: number, filters?: GlimmoFilters): string {
   const extra = filterClause(filters);
-  return `
-    SELECT
+  const sel = `
       event_date AS date,
       COUNT(DISTINCT CASE WHEN event_name = 'first_open' THEN user_pseudo_id END) AS new_users,
       COUNT(DISTINCT user_pseudo_id) AS dau,
@@ -105,11 +112,33 @@ export function getGlimmoDailyTrendQuery(days: number, filters?: GlimmoFilters):
       COUNT(DISTINCT CASE WHEN event_name IN ('companion_aicompanion_click','Homepage_bot_reply','Homepage_bot_like','companion_explore_click','companion_create_click') THEN user_pseudo_id END) AS ai_users,
       COUNT(DISTINCT CASE WHEN event_name = 'Subscription_pageview' THEN user_pseudo_id END) AS sub_viewers,
       COUNT(DISTINCT CASE WHEN event_name = 'collection_enter_click' THEN user_pseudo_id END) AS collection_users,
-      COUNT(DISTINCT CASE WHEN event_name = 'Insight_pageview' THEN user_pseudo_id END) AS insight_users
-    FROM \`${dataset()}.${table()}\`
-    WHERE ${tableFilter(days)} ${extra}
-    GROUP BY event_date
-    ORDER BY event_date
+      COUNT(DISTINCT CASE WHEN event_name = 'Insight_pageview' THEN user_pseudo_id END) AS insight_users`;
+  return `
+    WITH d_agg AS (
+      SELECT ${sel}
+      FROM \`${dataset()}.${table()}\`
+      WHERE ${tableFilterDailyOnly(days)} ${extra}
+      GROUP BY event_date
+    ),
+    i_agg AS (
+      SELECT ${sel}
+      FROM \`${dataset()}.${table()}\`
+      WHERE ${tableFilterIntradayOnly(days)} ${extra}
+      GROUP BY event_date
+    )
+    SELECT
+      COALESCE(d_agg.date, i_agg.date) AS date,
+      IF(d_agg.date IS NOT NULL, d_agg.new_users, i_agg.new_users) AS new_users,
+      IF(d_agg.date IS NOT NULL, d_agg.dau, i_agg.dau) AS dau,
+      IF(d_agg.date IS NOT NULL, d_agg.journal_entries, i_agg.journal_entries) AS journal_entries,
+      IF(d_agg.date IS NOT NULL, d_agg.journal_users, i_agg.journal_users) AS journal_users,
+      IF(d_agg.date IS NOT NULL, d_agg.ai_users, i_agg.ai_users) AS ai_users,
+      IF(d_agg.date IS NOT NULL, d_agg.sub_viewers, i_agg.sub_viewers) AS sub_viewers,
+      IF(d_agg.date IS NOT NULL, d_agg.collection_users, i_agg.collection_users) AS collection_users,
+      IF(d_agg.date IS NOT NULL, d_agg.insight_users, i_agg.insight_users) AS insight_users
+    FROM d_agg
+    FULL OUTER JOIN i_agg ON d_agg.date = i_agg.date
+    ORDER BY 1
   `;
 }
 
@@ -174,12 +203,13 @@ export function getGlimmoFeatureAdoptionQuery(days: number): string {
 // ─── Retention (D1/D3/D7/D14/D21/D30, first_open cohort) ───────────────
 export function getGlimmoRetentionQuery(days: number): string {
   const lookback = Math.max(days + 30, 60);
+  const lb = `FORMAT_DATE('%Y%m%d', DATE_SUB(CURRENT_DATE(), INTERVAL ${lookback} DAY))`;
+  const hi = `FORMAT_DATE('%Y%m%d', CURRENT_DATE())`;
   return `
     WITH cohort AS (
       SELECT user_pseudo_id, MIN(PARSE_DATE('%Y%m%d', event_date)) AS first_day
       FROM \`${dataset()}.${table()}\`
-      WHERE _TABLE_SUFFIX BETWEEN FORMAT_DATE('%Y%m%d', DATE_SUB(CURRENT_DATE(), INTERVAL ${lookback} DAY))
-        AND FORMAT_DATE('%Y%m%d', CURRENT_DATE())
+      WHERE ${tableSuffixInRange(lb, hi)}
         AND PARSE_DATE('%Y%m%d', event_date) >= DATE_SUB(CURRENT_DATE(), INTERVAL ${lookback} DAY)
         AND event_name = 'first_open'
       GROUP BY 1
@@ -189,8 +219,7 @@ export function getGlimmoRetentionQuery(days: number): string {
     activity AS (
       SELECT DISTINCT user_pseudo_id, PARSE_DATE('%Y%m%d', event_date) AS dt
       FROM \`${dataset()}.${table()}\`
-      WHERE _TABLE_SUFFIX BETWEEN FORMAT_DATE('%Y%m%d', DATE_SUB(CURRENT_DATE(), INTERVAL ${lookback} DAY))
-        AND FORMAT_DATE('%Y%m%d', CURRENT_DATE())
+      WHERE ${tableSuffixInRange(lb, hi)}
         AND PARSE_DATE('%Y%m%d', event_date) >= DATE_SUB(CURRENT_DATE(), INTERVAL ${lookback} DAY)
     ),
     retention AS (
@@ -385,7 +414,7 @@ export function getGlimmoVersionsQuery(): string {
   return `
     SELECT DISTINCT TRIM(COALESCE(app_info.version, '')) AS version
     FROM \`${dataset()}.${table()}\`
-    WHERE _TABLE_SUFFIX >= FORMAT_DATE('%Y%m%d', DATE_SUB(CURRENT_DATE(), INTERVAL 90 DAY))
+    WHERE ${tableSuffixSince(90)}
       AND app_info.version IS NOT NULL AND TRIM(app_info.version) != ''
     ORDER BY version DESC
     LIMIT 20

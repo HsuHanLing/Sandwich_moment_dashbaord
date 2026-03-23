@@ -14,9 +14,49 @@ export type OverviewFilters = {
   geo?: string;
 };
 
-function tableFilter(days: number) {
-  return `_TABLE_SUFFIX BETWEEN FORMAT_DATE('%Y%m%d', DATE_SUB(CURRENT_DATE(), INTERVAL ${days} DAY))
-      AND FORMAT_DATE('%Y%m%d', CURRENT_DATE())
+/**
+ * GA4 BigQuery export uses:
+ * - Daily: `events_YYYYMMDD` → _TABLE_SUFFIX = `20260319`
+ * - Intraday (recent): `events_intraday_YYYYMMDD` → _TABLE_SUFFIX = `intraday_20260321`
+ * Plain `BETWEEN '20260316' AND '20260323'` on _TABLE_SUFFIX excludes intraday shards (lexicographic).
+ */
+export function tableSuffixInRange(lowerExpr: string, upperExpr: string): string {
+  return `(
+    (REGEXP_CONTAINS(_TABLE_SUFFIX, r'^[0-9]{8}$') AND _TABLE_SUFFIX BETWEEN ${lowerExpr} AND ${upperExpr})
+    OR (STARTS_WITH(_TABLE_SUFFIX, 'intraday_') AND SUBSTR(_TABLE_SUFFIX, 10) BETWEEN ${lowerExpr} AND ${upperExpr})
+  )`;
+}
+
+/** Lower bound only: include daily and intraday shards with date suffix >= lower (YYYYMMDD). */
+export function tableSuffixSince(intervalDays: number): string {
+  const lower = `FORMAT_DATE('%Y%m%d', DATE_SUB(CURRENT_DATE(), INTERVAL ${intervalDays} DAY))`;
+  return `(
+    (REGEXP_CONTAINS(_TABLE_SUFFIX, r'^[0-9]{8}$') AND _TABLE_SUFFIX >= ${lower})
+    OR (STARTS_WITH(_TABLE_SUFFIX, 'intraday_') AND SUBSTR(_TABLE_SUFFIX, 10) >= ${lower})
+  )`;
+}
+
+/** Partition + event_date window for marketing queries (daily + intraday). */
+export function tableFilter(days: number) {
+  const low = `FORMAT_DATE('%Y%m%d', DATE_SUB(CURRENT_DATE(), INTERVAL ${days} DAY))`;
+  const high = `FORMAT_DATE('%Y%m%d', CURRENT_DATE())`;
+  return `${tableSuffixInRange(low, high)}
+      AND PARSE_DATE('%Y%m%d', event_date) >= DATE_SUB(CURRENT_DATE(), INTERVAL ${days} DAY)`;
+}
+
+/** Only finalized daily shards `events_YYYYMMDD` (8-digit suffix). */
+export function tableFilterDailyOnly(days: number) {
+  const low = `FORMAT_DATE('%Y%m%d', DATE_SUB(CURRENT_DATE(), INTERVAL ${days} DAY))`;
+  const high = `FORMAT_DATE('%Y%m%d', CURRENT_DATE())`;
+  return `(REGEXP_CONTAINS(_TABLE_SUFFIX, r'^[0-9]{8}$') AND _TABLE_SUFFIX BETWEEN ${low} AND ${high})
+      AND PARSE_DATE('%Y%m%d', event_date) >= DATE_SUB(CURRENT_DATE(), INTERVAL ${days} DAY)`;
+}
+
+/** Only intraday shards `events_intraday_YYYYMMDD`. */
+export function tableFilterIntradayOnly(days: number) {
+  const low = `FORMAT_DATE('%Y%m%d', DATE_SUB(CURRENT_DATE(), INTERVAL ${days} DAY))`;
+  const high = `FORMAT_DATE('%Y%m%d', CURRENT_DATE())`;
+  return `(STARTS_WITH(_TABLE_SUFFIX, 'intraday_') AND SUBSTR(_TABLE_SUFFIX, 10) BETWEEN ${low} AND ${high})
       AND PARSE_DATE('%Y%m%d', event_date) >= DATE_SUB(CURRENT_DATE(), INTERVAL ${days} DAY)`;
 }
 
@@ -89,7 +129,7 @@ function filterClause(filters: OverviewFilters | undefined, days: number): strin
         WITH user_days AS (
           SELECT user_pseudo_id, PARSE_DATE('%Y%m%d', event_date) as dt
           FROM \`${dataset()}.${table()}\`
-          WHERE _TABLE_SUFFIX >= FORMAT_DATE('%Y%m%d', DATE_SUB(CURRENT_DATE(), INTERVAL ${lookback} DAY))
+          WHERE ${tableSuffixSince(lookback)}
             AND PARSE_DATE('%Y%m%d', event_date) >= DATE_SUB(CURRENT_DATE(), INTERVAL ${lookback} DAY)
             AND PARSE_DATE('%Y%m%d', event_date) <= CURRENT_DATE()${extraNoUser}
           GROUP BY 1, 2
@@ -215,7 +255,7 @@ export function getKPIAndWowQuery(mode: "today" | "7d" | "30d", filters?: Overvi
   const days = mode === "today" ? 8 : mode === "7d" ? 14 : 60;
   const extra = filterClause(filters, days);
   return `
-    WITH daily AS (
+    WITH daily_d AS (
       SELECT
         FORMAT_DATE('%Y-%m-%d', PARSE_DATE('%Y%m%d', event_date)) as date_str,
         PARSE_DATE('%Y%m%d', event_date) as dt,
@@ -226,21 +266,63 @@ export function getKPIAndWowQuery(mode: "today" | "7d" | "30d", filters?: Overvi
         COALESCE(SUM(CASE WHEN event_name IN ('purchase','in_app_purchase', 'iap_success') THEN event_value_in_usd END), 0) as revenue,
         COUNT(DISTINCT CASE WHEN event_name IN ('video_unlock_success','dollarsup_first_unlock_success') THEN user_pseudo_id END) as unlock_users
       FROM \`${dataset()}.${table()}\`
-      WHERE ${tableFilter(days)}${extra}
+      WHERE ${tableFilterDailyOnly(days)}${extra}
       GROUP BY 1, 2
     ),
-    registration_daily AS (
+    daily_i AS (
+      SELECT
+        FORMAT_DATE('%Y-%m-%d', PARSE_DATE('%Y%m%d', event_date)) as date_str,
+        PARSE_DATE('%Y%m%d', event_date) as dt,
+        COUNT(DISTINCT user_pseudo_id) as pseudo_dau,
+        COUNT(DISTINCT user_id) as dau,
+        COUNT(DISTINCT CASE WHEN event_name = 'first_open' THEN user_pseudo_id END) as new_users,
+        COUNT(DISTINCT CASE WHEN event_name IN ('purchase','in_app_purchase', 'iap_success') THEN user_pseudo_id END) as payers,
+        COALESCE(SUM(CASE WHEN event_name IN ('purchase','in_app_purchase', 'iap_success') THEN event_value_in_usd END), 0) as revenue,
+        COUNT(DISTINCT CASE WHEN event_name IN ('video_unlock_success','dollarsup_first_unlock_success') THEN user_pseudo_id END) as unlock_users
+      FROM \`${dataset()}.${table()}\`
+      WHERE ${tableFilterIntradayOnly(days)}${extra}
+      GROUP BY 1, 2
+    ),
+    daily AS (
+      SELECT
+        COALESCE(d.date_str, i.date_str) as date_str,
+        COALESCE(d.dt, i.dt) as dt,
+        IF(d.dt IS NOT NULL, d.pseudo_dau, i.pseudo_dau) as pseudo_dau,
+        IF(d.dt IS NOT NULL, d.dau, i.dau) as dau,
+        IF(d.dt IS NOT NULL, d.new_users, i.new_users) as new_users,
+        IF(d.dt IS NOT NULL, d.payers, i.payers) as payers,
+        IF(d.dt IS NOT NULL, d.revenue, i.revenue) as revenue,
+        IF(d.dt IS NOT NULL, d.unlock_users, i.unlock_users) as unlock_users
+      FROM daily_d d
+      FULL OUTER JOIN daily_i i ON d.dt = i.dt
+    ),
+    registration_daily_d AS (
       SELECT
         FORMAT_DATE('%Y-%m-%d', PARSE_DATE('%Y%m%d', event_date)) as date,
         COUNT(DISTINCT user_pseudo_id) as registration
       FROM \`${dataset()}.${table()}\`
-      WHERE ${tableFilter(days)}${extra} AND ${REG_GEO} AND ${REG_EVENTS}
+      WHERE ${tableFilterDailyOnly(days)}${extra} AND ${REG_GEO} AND ${REG_EVENTS}
       GROUP BY event_date
+    ),
+    registration_daily_i AS (
+      SELECT
+        FORMAT_DATE('%Y-%m-%d', PARSE_DATE('%Y%m%d', event_date)) as date,
+        COUNT(DISTINCT user_pseudo_id) as registration
+      FROM \`${dataset()}.${table()}\`
+      WHERE ${tableFilterIntradayOnly(days)}${extra} AND ${REG_GEO} AND ${REG_EVENTS}
+      GROUP BY event_date
+    ),
+    registration_daily AS (
+      SELECT
+        COALESCE(d.date, i.date) as date,
+        IF(d.date IS NOT NULL, d.registration, i.registration) as registration
+      FROM registration_daily_d d
+      FULL OUTER JOIN registration_daily_i i ON d.date = i.date
     ),
     reg_users AS (
       SELECT user_pseudo_id, MIN(PARSE_DATE('%Y%m%d', event_date)) as first_reg_dt
       FROM \`${dataset()}.${table()}\`
-      WHERE _TABLE_SUFFIX >= FORMAT_DATE('%Y%m%d', DATE_SUB(CURRENT_DATE(), INTERVAL ${days + 7} DAY))
+      WHERE ${tableSuffixSince(days + 7)}
         AND PARSE_DATE('%Y%m%d', event_date) >= DATE_SUB(CURRENT_DATE(), INTERVAL ${days + 7} DAY)
         AND ${REG_GEO} AND ${REG_EVENTS}${extra}
       GROUP BY 1
@@ -253,7 +335,7 @@ export function getKPIAndWowQuery(mode: "today" | "7d" | "30d", filters?: Overvi
       JOIN \`${dataset()}.${table()}\` b
         ON r.user_pseudo_id = b.user_pseudo_id
         AND PARSE_DATE('%Y%m%d', b.event_date) = DATE_ADD(r.first_reg_dt, INTERVAL 1 DAY)
-      WHERE _TABLE_SUFFIX >= FORMAT_DATE('%Y%m%d', DATE_SUB(CURRENT_DATE(), INTERVAL ${days + 7} DAY))
+      WHERE ${tableSuffixSince(days + 7)}
         AND PARSE_DATE('%Y%m%d', b.event_date) >= DATE_SUB(CURRENT_DATE(), INTERVAL ${days} DAY)${extra}
         and b.event_name NOT IN ('notification_receive','notification_dismiss','app_remove')
       GROUP BY 1
@@ -280,7 +362,7 @@ export function getDailyTrendQuery(days: number = 7, filters?: OverviewFilters) 
   const extra = filterClause(filters, days);
   const lookback = days + 7;
   return `
-    WITH daily AS (
+    WITH daily_d AS (
       SELECT
         FORMAT_DATE('%Y-%m-%d', PARSE_DATE('%Y%m%d', event_date)) as date,
         PARSE_DATE('%Y%m%d', event_date) as dt,
@@ -304,18 +386,75 @@ export function getDailyTrendQuery(days: number = 7, filters?: OverviewFilters) 
             END
           ), 0) as withdrawal
       FROM \`${dataset()}.${table()}\`
-      WHERE ${tableFilter(days)}${extra}
+      WHERE ${tableFilterDailyOnly(days)}${extra}
       GROUP BY 1, 2
     ),
-    registration_daily AS (
+    daily_i AS (
+      SELECT
+        FORMAT_DATE('%Y-%m-%d', PARSE_DATE('%Y%m%d', event_date)) as date,
+        PARSE_DATE('%Y%m%d', event_date) as dt,
+        COUNT(DISTINCT CASE WHEN event_name = 'first_open' THEN user_pseudo_id END) as new_users,
+        COUNT(DISTINCT user_pseudo_id) as pseudo_dau,
+        COUNT(DISTINCT user_id) as dau,
+        COUNT(DISTINCT CASE WHEN event_name IN ('purchase','in_app_purchase',
+          'app_store_subscription_convert','app_store_subscription_renew', 'iap_success')
+          THEN user_pseudo_id END) as payers,
+        COALESCE(SUM(CASE WHEN event_name IN ('purchase','in_app_purchase',
+          'app_store_subscription_convert','app_store_subscription_renew', 'iap_success')
+          THEN event_value_in_usd END), 0) as revenue,
+        COUNT(DISTINCT CASE WHEN event_name IN ('video_unlock_success','dollarsup_first_unlock_success') THEN user_pseudo_id END) as unlock_users,
+        COUNT(DISTINCT CASE WHEN event_name IN ('video_unlock_success','dollarsup_first_unlock_success') THEN user_pseudo_id END) as unlock_users_base,
+        COALESCE(SUM(
+        CASE WHEN event_name = 'withdraw_result' THEN 
+              COALESCE(
+                SAFE_CAST((SELECT value.string_value FROM UNNEST(event_params) WHERE key = 'withdraw_amount') AS FLOAT64),
+                0
+              ) 
+            END
+          ), 0) as withdrawal
+      FROM \`${dataset()}.${table()}\`
+      WHERE ${tableFilterIntradayOnly(days)}${extra}
+      GROUP BY 1, 2
+    ),
+    daily AS (
+      SELECT
+        COALESCE(d.date, i.date) as date,
+        COALESCE(d.dt, i.dt) as dt,
+        IF(d.dt IS NOT NULL, d.new_users, i.new_users) as new_users,
+        IF(d.dt IS NOT NULL, d.pseudo_dau, i.pseudo_dau) as pseudo_dau,
+        IF(d.dt IS NOT NULL, d.dau, i.dau) as dau,
+        IF(d.dt IS NOT NULL, d.payers, i.payers) as payers,
+        IF(d.dt IS NOT NULL, d.revenue, i.revenue) as revenue,
+        IF(d.dt IS NOT NULL, d.unlock_users, i.unlock_users) as unlock_users,
+        IF(d.dt IS NOT NULL, d.unlock_users_base, i.unlock_users_base) as unlock_users_base,
+        IF(d.dt IS NOT NULL, d.withdrawal, i.withdrawal) as withdrawal
+      FROM daily_d d
+      FULL OUTER JOIN daily_i i ON d.dt = i.dt
+    ),
+    registration_daily_d AS (
       SELECT
         FORMAT_DATE('%Y-%m-%d', PARSE_DATE('%Y%m%d', event_date)) as date,
         COUNT(DISTINCT user_pseudo_id) as registration
       FROM \`${dataset()}.${table()}\`
-      WHERE ${tableFilter(days)}${extra} AND ${REG_GEO} AND ${REG_EVENTS}
+      WHERE ${tableFilterDailyOnly(days)}${extra} AND ${REG_GEO} AND ${REG_EVENTS}
       GROUP BY event_date
     ),
-    unlock_ge2_daily AS (
+    registration_daily_i AS (
+      SELECT
+        FORMAT_DATE('%Y-%m-%d', PARSE_DATE('%Y%m%d', event_date)) as date,
+        COUNT(DISTINCT user_pseudo_id) as registration
+      FROM \`${dataset()}.${table()}\`
+      WHERE ${tableFilterIntradayOnly(days)}${extra} AND ${REG_GEO} AND ${REG_EVENTS}
+      GROUP BY event_date
+    ),
+    registration_daily AS (
+      SELECT
+        COALESCE(d.date, i.date) as date,
+        IF(d.date IS NOT NULL, d.registration, i.registration) as registration
+      FROM registration_daily_d d
+      FULL OUTER JOIN registration_daily_i i ON d.date = i.date
+    ),
+    unlock_ge2_daily_d AS (
       SELECT
         FORMAT_DATE('%Y-%m-%d', PARSE_DATE('%Y%m%d', event_date)) as date,
         COUNT(DISTINCT user_pseudo_id) as unlock_ge2
@@ -323,17 +462,39 @@ export function getDailyTrendQuery(days: number = 7, filters?: OverviewFilters) 
         SELECT user_pseudo_id, event_date,
           COUNT(*) as cnt
         FROM \`${dataset()}.${table()}\`
-        WHERE ${tableFilter(days)}${extra}
+        WHERE ${tableFilterDailyOnly(days)}${extra}
           AND event_name IN ('video_unlock_success','dollarsup_first_unlock_success')
         GROUP BY user_pseudo_id, event_date
         HAVING cnt >= 2
       )
         GROUP BY 1
     ),
+    unlock_ge2_daily_i AS (
+      SELECT
+        FORMAT_DATE('%Y-%m-%d', PARSE_DATE('%Y%m%d', event_date)) as date,
+        COUNT(DISTINCT user_pseudo_id) as unlock_ge2
+      FROM (
+        SELECT user_pseudo_id, event_date,
+          COUNT(*) as cnt
+        FROM \`${dataset()}.${table()}\`
+        WHERE ${tableFilterIntradayOnly(days)}${extra}
+          AND event_name IN ('video_unlock_success','dollarsup_first_unlock_success')
+        GROUP BY user_pseudo_id, event_date
+        HAVING cnt >= 2
+      )
+        GROUP BY 1
+    ),
+    unlock_ge2_daily AS (
+      SELECT
+        COALESCE(d.date, i.date) as date,
+        IF(d.date IS NOT NULL, d.unlock_ge2, i.unlock_ge2) as unlock_ge2
+      FROM unlock_ge2_daily_d d
+      FULL OUTER JOIN unlock_ge2_daily_i i ON d.date = i.date
+    ),
     reg_users AS (
       SELECT user_pseudo_id, MIN(PARSE_DATE('%Y%m%d', event_date)) as first_reg_dt
       FROM \`${dataset()}.${table()}\`
-      WHERE _TABLE_SUFFIX >= FORMAT_DATE('%Y%m%d', DATE_SUB(CURRENT_DATE(), INTERVAL ${lookback} DAY))
+      WHERE ${tableSuffixSince(lookback)}
         AND PARSE_DATE('%Y%m%d', event_date) >= DATE_SUB(CURRENT_DATE(), INTERVAL ${lookback} DAY)
         AND ${REG_GEO} AND ${REG_EVENTS}${extra}
       GROUP BY 1
@@ -347,7 +508,7 @@ export function getDailyTrendQuery(days: number = 7, filters?: OverviewFilters) 
       LEFT JOIN (
         SELECT DISTINCT user_pseudo_id, PARSE_DATE('%Y%m%d', event_date) as dt
         FROM \`${dataset()}.${table()}\`
-        WHERE _TABLE_SUFFIX >= FORMAT_DATE('%Y%m%d', DATE_SUB(CURRENT_DATE(), INTERVAL ${lookback} DAY))
+        WHERE ${tableSuffixSince(lookback)}
           AND PARSE_DATE('%Y%m%d', event_date) >= DATE_SUB(CURRENT_DATE(), INTERVAL ${lookback} DAY)${extra}
           AND event_name NOT IN ('notification_receive','notification_dismiss','app_remove')
       ) a ON r.user_pseudo_id = a.user_pseudo_id
@@ -682,7 +843,7 @@ export function getGrowthFunnelQuery(days: number = 30) {
         (SELECT value.string_value FROM UNNEST(event_params) WHERE key = 'result') as result_val,
         (SELECT value.string_value FROM UNNEST(event_params) WHERE key = 'source') as feed_area
       FROM \`${dataset()}.${table()}\`
-      WHERE _TABLE_SUFFIX >= FORMAT_DATE('%Y%m%d', DATE_SUB(CURRENT_DATE(), INTERVAL ${days + 14} DAY))
+      WHERE ${tableSuffixSince(days + 14)}
         AND PARSE_DATE('%Y%m%d', event_date) >= DATE_SUB(CURRENT_DATE(), INTERVAL ${days + 14} DAY)
     ),
     first_opens AS (
@@ -739,7 +900,7 @@ export function getRegistrationRelatedEventsQuery(days: number = 30) {
     SELECT * FROM (
       SELECT event_name as name, 'event' as type, COUNT(*) as cnt
       FROM \`${dataset()}.${table()}\`
-      WHERE _TABLE_SUFFIX >= FORMAT_DATE('%Y%m%d', DATE_SUB(CURRENT_DATE(), INTERVAL ${days} DAY))
+      WHERE ${tableSuffixSince(days)}
         AND PARSE_DATE('%Y%m%d', event_date) >= DATE_SUB(CURRENT_DATE(), INTERVAL ${days} DAY)
         AND (
           LOWER(event_name) LIKE '%registration%'
@@ -764,7 +925,7 @@ export function getRegistrationRelatedEventsQuery(days: number = 30) {
           'screen' as type,
           COUNT(*) as cnt
         FROM \`${dataset()}.${table()}\`
-        WHERE _TABLE_SUFFIX >= FORMAT_DATE('%Y%m%d', DATE_SUB(CURRENT_DATE(), INTERVAL ${days} DAY))
+        WHERE ${tableSuffixSince(days)}
           AND PARSE_DATE('%Y%m%d', event_date) >= DATE_SUB(CURRENT_DATE(), INTERVAL ${days} DAY)
           AND event_name IN ('All_PageBehavior')
         GROUP BY 1
@@ -805,7 +966,7 @@ export function getRegistrationFunnelQuery(days: number = 30) {
         (SELECT value.string_value FROM UNNEST(event_params) WHERE key = 'cta_name') as cta_name,
         COALESCE(geo.country, '') as country
       FROM \`${dataset()}.${table()}\`
-      WHERE _TABLE_SUFFIX >= FORMAT_DATE('%Y%m%d', DATE_SUB(CURRENT_DATE(), INTERVAL ${days + 14} DAY))
+      WHERE ${tableSuffixSince(days + 14)}
         AND PARSE_DATE('%Y%m%d', event_date) >= DATE_SUB(CURRENT_DATE(), INTERVAL ${days + 14} DAY)
     ),
     first_opens AS (
@@ -945,7 +1106,7 @@ export function getRetentionQuery(days: number = 30) {
     WITH reg_users AS (
       SELECT user_pseudo_id, MIN(PARSE_DATE('%Y%m%d', event_date)) as reg_dt
       FROM \`${dataset()}.${table()}\`
-      WHERE _TABLE_SUFFIX >= FORMAT_DATE('%Y%m%d', DATE_SUB(CURRENT_DATE(), INTERVAL ${days + 14} DAY))
+      WHERE ${tableSuffixSince(days + 14)}
         AND PARSE_DATE('%Y%m%d', event_date) >= DATE_SUB(CURRENT_DATE(), INTERVAL ${days + 14} DAY)
         AND ${REG_GEO} AND ${REG_EVENTS}
       GROUP BY 1
@@ -959,7 +1120,7 @@ export function getRetentionQuery(days: number = 30) {
         ON r.user_pseudo_id = b.user_pseudo_id
         AND PARSE_DATE('%Y%m%d', b.event_date) > r.reg_dt
         AND PARSE_DATE('%Y%m%d', b.event_date) <= DATE_ADD(r.reg_dt, INTERVAL 14 DAY)
-      WHERE _TABLE_SUFFIX >= FORMAT_DATE('%Y%m%d', DATE_SUB(CURRENT_DATE(), INTERVAL ${days + 14} DAY))
+      WHERE ${tableSuffixSince(days + 14)}
         AND PARSE_DATE('%Y%m%d', b.event_date) >= DATE_SUB(CURRENT_DATE(), INTERVAL ${days + 14} DAY) 
         AND b.event_name NOT IN ('notification_receive','notification_dismiss','app_remove')
       GROUP BY 1, 2, 3, 4
@@ -986,7 +1147,7 @@ export function getRetentionQueryUnlockCohort(days: number = 30) {
     WITH unlock_cohort AS (
       SELECT user_pseudo_id, MIN(PARSE_DATE('%Y%m%d', event_date)) as cohort_dt
       FROM \`${dataset()}.${table()}\`
-      WHERE _TABLE_SUFFIX >= FORMAT_DATE('%Y%m%d', DATE_SUB(CURRENT_DATE(), INTERVAL ${lookback} DAY))
+      WHERE ${tableSuffixSince(lookback)}
         AND PARSE_DATE('%Y%m%d', event_date) >= DATE_SUB(CURRENT_DATE(), INTERVAL ${lookback} DAY)
         AND event_name IN ('video_unlock_success','dollarsup_first_unlock_success','video_click_unlock')
       GROUP BY 1
@@ -1000,7 +1161,7 @@ export function getRetentionQueryUnlockCohort(days: number = 30) {
         ON u.user_pseudo_id = b.user_pseudo_id
         AND PARSE_DATE('%Y%m%d', b.event_date) > u.cohort_dt
         AND PARSE_DATE('%Y%m%d', b.event_date) <= DATE_ADD(u.cohort_dt, INTERVAL 14 DAY)
-      WHERE _TABLE_SUFFIX >= FORMAT_DATE('%Y%m%d', DATE_SUB(CURRENT_DATE(), INTERVAL ${lookback} DAY))
+      WHERE ${tableSuffixSince(lookback)}
         AND PARSE_DATE('%Y%m%d', b.event_date) >= DATE_SUB(CURRENT_DATE(), INTERVAL ${lookback} DAY)
         AND b.event_name NOT IN ('notification_receive','notification_dismiss','app_remove')
       GROUP BY 1, 2, 3, 4
@@ -1027,7 +1188,7 @@ export function getUnlockD7RetentionQuery(days: number = 30) {
     WITH unlock_users AS (
       SELECT user_pseudo_id, MIN(PARSE_DATE('%Y%m%d', event_date)) as first_unlock_dt
       FROM \`${dataset()}.${table()}\`
-      WHERE _TABLE_SUFFIX >= FORMAT_DATE('%Y%m%d', DATE_SUB(CURRENT_DATE(), INTERVAL ${lookback} DAY))
+      WHERE ${tableSuffixSince(lookback)}
         AND PARSE_DATE('%Y%m%d', event_date) >= DATE_SUB(CURRENT_DATE(), INTERVAL ${lookback} DAY)
         AND event_name IN ('video_unlock_success','dollarsup_first_unlock_success')
       GROUP BY 1
@@ -1037,7 +1198,7 @@ export function getUnlockD7RetentionQuery(days: number = 30) {
     activity AS (
       SELECT DISTINCT user_pseudo_id, PARSE_DATE('%Y%m%d', event_date) as dt
       FROM \`${dataset()}.${table()}\`
-      WHERE _TABLE_SUFFIX >= FORMAT_DATE('%Y%m%d', DATE_SUB(CURRENT_DATE(), INTERVAL ${lookback} DAY))
+      WHERE ${tableSuffixSince(lookback)}
         AND PARSE_DATE('%Y%m%d', event_date) >= DATE_SUB(CURRENT_DATE(), INTERVAL ${lookback} DAY)
         AND event_name NOT IN ('notification_receive','notification_dismiss','app_remove')
     ) 
@@ -1058,7 +1219,7 @@ export function getUnlockDistributionQuery(days: number = 30) {
     WITH signups AS (
       SELECT user_pseudo_id, MIN(PARSE_DATE('%Y%m%d', event_date)) as signup_dt
       FROM \`${dataset()}.${table()}\`
-      WHERE _TABLE_SUFFIX >= FORMAT_DATE('%Y%m%d', DATE_SUB(CURRENT_DATE(), INTERVAL ${lookback} DAY))
+      WHERE ${tableSuffixSince(lookback)}
         AND ${REG_GEO} AND ${REG_EVENTS}
       GROUP BY 1
       HAVING signup_dt >= DATE_SUB(CURRENT_DATE(), INTERVAL ${days} DAY)
@@ -1067,7 +1228,7 @@ export function getUnlockDistributionQuery(days: number = 30) {
     unlock_events AS (
       SELECT user_pseudo_id, PARSE_DATE('%Y%m%d', event_date) as dt
       FROM \`${dataset()}.${table()}\`
-      WHERE _TABLE_SUFFIX >= FORMAT_DATE('%Y%m%d', DATE_SUB(CURRENT_DATE(), INTERVAL ${lookback} DAY))
+      WHERE ${tableSuffixSince(lookback)}
         AND PARSE_DATE('%Y%m%d', event_date) >= DATE_SUB(CURRENT_DATE(), INTERVAL ${lookback} DAY)
         AND event_name IN ('video_unlock_success','dollarsup_first_unlock_success')
     ),
@@ -1273,7 +1434,7 @@ export function getPaidUsersKPIQuery(days: number = 30) {
     all_time_first AS (
       SELECT user_pseudo_id, MIN(PARSE_DATE('%Y%m%d', event_date)) as first_pay_dt
       FROM \`${dataset()}.${table()}\`
-      WHERE _TABLE_SUFFIX >= FORMAT_DATE('%Y%m%d', DATE_SUB(CURRENT_DATE(), INTERVAL ${lookback} DAY))
+      WHERE ${tableSuffixSince(lookback)}
         AND event_name IN ('purchase','in_app_purchase',
           'app_store_subscription_convert','app_store_subscription_renew')
       GROUP BY 1
@@ -1319,7 +1480,7 @@ export function getPaidUsersD7RetentionQuery(days: number = 30) {
     WITH first_payers AS (
       SELECT user_pseudo_id, MIN(PARSE_DATE('%Y%m%d', event_date)) as first_pay_dt
       FROM \`${dataset()}.${table()}\`
-      WHERE _TABLE_SUFFIX >= FORMAT_DATE('%Y%m%d', DATE_SUB(CURRENT_DATE(), INTERVAL ${lookback} DAY))
+      WHERE ${tableSuffixSince(lookback)}
         AND PARSE_DATE('%Y%m%d', event_date) >= DATE_SUB(CURRENT_DATE(), INTERVAL ${lookback} DAY)
         AND event_name IN ('purchase','in_app_purchase')
       GROUP BY 1
@@ -1329,7 +1490,7 @@ export function getPaidUsersD7RetentionQuery(days: number = 30) {
     activity AS (
       SELECT DISTINCT user_pseudo_id, PARSE_DATE('%Y%m%d', event_date) as dt
       FROM \`${dataset()}.${table()}\`
-      WHERE _TABLE_SUFFIX >= FORMAT_DATE('%Y%m%d', DATE_SUB(CURRENT_DATE(), INTERVAL ${lookback} DAY))
+      WHERE ${tableSuffixSince(lookback)}
         AND PARSE_DATE('%Y%m%d', event_date) >= DATE_SUB(CURRENT_DATE(), INTERVAL ${lookback} DAY)
         AND event_name NOT IN ('notification_receive','notification_dismiss','app_remove')
     )
@@ -1350,7 +1511,7 @@ export function getPaidUsersFirstPayDistQuery(days: number = 30) {
     WITH signups AS (
       SELECT user_pseudo_id, MIN(PARSE_DATE('%Y%m%d', event_date)) as signup_dt
       FROM \`${dataset()}.${table()}\`
-      WHERE _TABLE_SUFFIX >= FORMAT_DATE('%Y%m%d', DATE_SUB(CURRENT_DATE(), INTERVAL ${lookback} DAY))
+      WHERE ${tableSuffixSince(lookback)}
         AND PARSE_DATE('%Y%m%d', event_date) >= DATE_SUB(CURRENT_DATE(), INTERVAL ${lookback} DAY)
         AND event_name = 'first_open'
       GROUP BY 1
@@ -1358,7 +1519,7 @@ export function getPaidUsersFirstPayDistQuery(days: number = 30) {
     first_pay AS (
       SELECT user_pseudo_id, MIN(PARSE_DATE('%Y%m%d', event_date)) as first_pay_dt
       FROM \`${dataset()}.${table()}\`
-      WHERE _TABLE_SUFFIX >= FORMAT_DATE('%Y%m%d', DATE_SUB(CURRENT_DATE(), INTERVAL ${lookback} DAY))
+      WHERE ${tableSuffixSince(lookback)}
         AND PARSE_DATE('%Y%m%d', event_date) >= DATE_SUB(CURRENT_DATE(), INTERVAL ${lookback} DAY)
         AND event_name IN ('purchase','in_app_purchase')
       GROUP BY 1

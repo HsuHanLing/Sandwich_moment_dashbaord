@@ -4,15 +4,10 @@ import {
   getFlywheelQuery,
   getReferralRewardQuery,
   getUnlockD7RetentionQuery,
+  tableFilter,
 } from "@/lib/queries";
 
 export const dynamic = "force-dynamic";
-
-function tableFilter(days: number) {
-  return `_TABLE_SUFFIX BETWEEN FORMAT_DATE('%Y%m%d', DATE_SUB(CURRENT_DATE(), INTERVAL ${days} DAY))
-    AND FORMAT_DATE('%Y%m%d', CURRENT_DATE())
-    AND PARSE_DATE('%Y%m%d', event_date) >= DATE_SUB(CURRENT_DATE(), INTERVAL ${days} DAY)`;
-}
 
 const dataset = () => process.env.BIGQUERY_DATASET || "analytics_233462855";
 const table = () => process.env.BIGQUERY_TABLE || "events_*";
