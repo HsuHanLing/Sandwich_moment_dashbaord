@@ -71,6 +71,29 @@ function lifetimeTableFilter(lookbackDays: number) {
 const PURCHASE_EVENT_NAMES = `('in_app_purchase','purchase','iap_success',
           'app_store_subscription_convert','app_store_subscription_renew')`;
 
+/**
+ * Subscription (paid) classification when `product_id` is available as a column (e.g. subscription analysis `base`).
+ * Exclusive SKUs, or iap_success with product_id LIKE '%subscription%', or App Store subscription events.
+ */
+const SUBSCRIPTION_PAID_PRODUCT = `(
+  COALESCE(product_id, '') IN ('exclusivemonthly', 'exclusiveaccess')
+  OR (event_name = 'iap_success' AND COALESCE(product_id, '') LIKE '%subscription%')
+  OR event_name IN ('app_store_subscription_convert', 'app_store_subscription_renew')
+)`;
+
+/** iap_start / iap_fail: subscription SKU (exclusive or generic subscription product id). */
+const SUBSCRIPTION_IAP_FLOW_PRODUCT = `(
+  COALESCE(product_id, '') IN ('exclusivemonthly', 'exclusiveaccess')
+  OR COALESCE(product_id, '') LIKE '%subscription%'
+)`;
+
+/** Same as SUBSCRIPTION_PAID_PRODUCT but reads product_id from event_params inline (no base CTE). */
+const SUBSCRIPTION_PAID_PRODUCT_PARAMS = `(
+  COALESCE((SELECT value.string_value FROM UNNEST(event_params) WHERE key = 'product_id'), '') IN ('exclusivemonthly', 'exclusiveaccess')
+  OR (event_name = 'iap_success' AND COALESCE((SELECT value.string_value FROM UNNEST(event_params) WHERE key = 'product_id'), '') LIKE '%subscription%')
+  OR event_name IN ('app_store_subscription_convert', 'app_store_subscription_renew')
+)`;
+
 function filterClause(filters: OverviewFilters | undefined, days: number): string {
   if (!filters) return "";
   const parts: string[] = [];
@@ -260,7 +283,7 @@ export function getKPIAndWowQuery(mode: "today" | "7d" | "30d", filters?: Overvi
         FORMAT_DATE('%Y-%m-%d', PARSE_DATE('%Y%m%d', event_date)) as date_str,
         PARSE_DATE('%Y%m%d', event_date) as dt,
         COUNT(DISTINCT user_pseudo_id) as pseudo_dau,
-        COUNT(DISTINCT user_id) as dau,
+        COUNT(DISTINCT case when event_name = 'Enter_NewUserLandSupPage' then user_id else null end) as dau,
         COUNT(DISTINCT CASE WHEN event_name = 'first_open' THEN user_pseudo_id END) as new_users,
         COUNT(DISTINCT CASE WHEN event_name IN ('purchase','in_app_purchase', 'iap_success') THEN user_pseudo_id END) as payers,
         COALESCE(SUM(CASE WHEN event_name IN ('purchase','in_app_purchase', 'iap_success') THEN event_value_in_usd END), 0) as revenue,
@@ -274,7 +297,7 @@ export function getKPIAndWowQuery(mode: "today" | "7d" | "30d", filters?: Overvi
         FORMAT_DATE('%Y-%m-%d', PARSE_DATE('%Y%m%d', event_date)) as date_str,
         PARSE_DATE('%Y%m%d', event_date) as dt,
         COUNT(DISTINCT user_pseudo_id) as pseudo_dau,
-        COUNT(DISTINCT user_id) as dau,
+        COUNT(DISTINCT case when event_name = 'Enter_NewUserLandSupPage' then user_id else null end) as dau,
         COUNT(DISTINCT CASE WHEN event_name = 'first_open' THEN user_pseudo_id END) as new_users,
         COUNT(DISTINCT CASE WHEN event_name IN ('purchase','in_app_purchase', 'iap_success') THEN user_pseudo_id END) as payers,
         COALESCE(SUM(CASE WHEN event_name IN ('purchase','in_app_purchase', 'iap_success') THEN event_value_in_usd END), 0) as revenue,
@@ -368,7 +391,7 @@ export function getDailyTrendQuery(days: number = 7, filters?: OverviewFilters) 
         PARSE_DATE('%Y%m%d', event_date) as dt,
         COUNT(DISTINCT CASE WHEN event_name = 'first_open' THEN user_pseudo_id END) as new_users,
         COUNT(DISTINCT user_pseudo_id) as pseudo_dau,
-        COUNT(DISTINCT user_id) as dau,
+        COUNT(DISTINCT case when event_name = 'Enter_NewUserLandSupPage' then user_id else null end) as dau,
         COUNT(DISTINCT CASE WHEN event_name IN ('purchase','in_app_purchase',
           'app_store_subscription_convert','app_store_subscription_renew', 'iap_success')
           THEN user_pseudo_id END) as payers,
@@ -395,7 +418,7 @@ export function getDailyTrendQuery(days: number = 7, filters?: OverviewFilters) 
         PARSE_DATE('%Y%m%d', event_date) as dt,
         COUNT(DISTINCT CASE WHEN event_name = 'first_open' THEN user_pseudo_id END) as new_users,
         COUNT(DISTINCT user_pseudo_id) as pseudo_dau,
-        COUNT(DISTINCT user_id) as dau,
+        COUNT(DISTINCT case when event_name = 'Enter_NewUserLandSupPage' then user_id else null end) as dau,
         COUNT(DISTINCT CASE WHEN event_name IN ('purchase','in_app_purchase',
           'app_store_subscription_convert','app_store_subscription_renew', 'iap_success')
           THEN user_pseudo_id END) as payers,
@@ -589,28 +612,22 @@ export function getGeoDistributionQuery(days: number = 30) {
   `;
 }
 
-// Monetization - Revenue Mix: Subscription vs One-time
+// Monetization - Revenue Mix: Subscription vs Unlock Pack (same product_id rule as Paid Sub Revenue)
 export function getMonetizationQuery(days: number = 30) {
   return `
     WITH classified AS (
-    SELECT
+      SELECT
         CASE
-          WHEN event_name IN ('app_store_subscription_convert', 'app_store_subscription_renew', 'iap_success', 'in_app_purchase')
-            THEN 'Subscription'
-          WHEN LOWER(COALESCE(
-        (SELECT value.string_value FROM UNNEST(event_params) WHERE key = 'product_id'),
-        (SELECT value.string_value FROM UNNEST(event_params) WHERE key = 'item_category'),
-            ''
-          )) LIKE '%sub%'
+          WHEN event_name IN ('purchase', 'in_app_purchase', 'app_store_subscription_convert', 'app_store_subscription_renew', 'iap_success')
+            AND ${SUBSCRIPTION_PAID_PRODUCT_PARAMS}
             THEN 'Subscription'
           ELSE 'Unlock Pack'
         END as revenue_stream,
         event_value_in_usd
-    FROM \`${dataset()}.${table()}\`
-    WHERE ${tableFilter(days)}
-        AND event_name IN ('purchase', 'in_app_purchase',
-          'app_store_subscription_convert', 'app_store_subscription_renew', 'iap_success', 'in_app_purchase')
-      AND event_value_in_usd > 0
+      FROM \`${dataset()}.${table()}\`
+      WHERE ${tableFilter(days)}
+        AND event_name IN ('purchase', 'in_app_purchase', 'app_store_subscription_convert', 'app_store_subscription_renew', 'iap_success')
+        AND event_value_in_usd > 0
     )
     SELECT revenue_stream, SUM(event_value_in_usd) as revenue
     FROM classified
@@ -634,7 +651,7 @@ export function getEconomyHealthQuery(days: number = 30, segment: string = "all"
       WHERE ${tableFilter(days)} ${paidFilter}
     ),
     dau AS (
-      SELECT COUNT(DISTINCT user_pseudo_id) as total_dau FROM base
+      SELECT COUNT(DISTINCT case when event_name = 'Enter_NewUserLandSupPage' then user_pseudo_id else null end) as total_dau FROM base
     ),
     unlock_stats AS (
       SELECT
@@ -1450,15 +1467,16 @@ export function getPaidUsersKPIQuery(days: number = 30) {
         COALESCE(SUM(CASE
           WHEN event_name IN ('app_store_subscription_convert','app_store_subscription_renew')
             THEN event_value_in_usd
-          WHEN LOWER(COALESCE(
-            (SELECT value.string_value FROM UNNEST(event_params) WHERE key = 'product_type'), ''
-          )) LIKE '%sub%' THEN event_value_in_usd
+          WHEN event_name IN ('purchase','in_app_purchase','iap_success') AND (
+            COALESCE((SELECT value.string_value FROM UNNEST(event_params) WHERE key = 'product_id'), '') IN ('exclusivemonthly', 'exclusiveaccess')
+            OR (event_name = 'iap_success' AND COALESCE((SELECT value.string_value FROM UNNEST(event_params) WHERE key = 'product_id'), '') LIKE '%subscription%')
+          ) THEN event_value_in_usd
           ELSE 0
         END), 0) as subscription_revenue,
         COALESCE(SUM(event_value_in_usd), 0) as total_revenue
       FROM \`${dataset()}.${table()}\`
       WHERE ${tableFilter(days)}
-        AND event_name IN ('purchase','in_app_purchase',
+        AND event_name IN ('purchase','in_app_purchase','iap_success',
           'app_store_subscription_convert','app_store_subscription_renew')
         AND event_value_in_usd > 0
     )
@@ -1997,9 +2015,9 @@ export function getReferralRewardQuery(days: number = 30) {
 }
 
 // Subscription / VIP Analysis: cash exchange vs real paid subscribers
-// Subscription = monthly/yearly recurring (product_id='subscription')
+// Paid subscription: product_id IN ('exclusivemonthly','exclusiveaccess'), or iap_success with product_id LIKE '%subscription%',
+//   or app_store_subscription_convert / app_store_subscription_renew
 // Top-up = one-time coin purchase (product_id LIKE 'top-up%') — excluded here
-// iap_start/iap_success have product_id param to distinguish subscription vs top-up
 export function getSubscriptionAnalysisQuery(days: number = 30) {
   return `
     WITH base AS (
@@ -2017,7 +2035,7 @@ export function getSubscriptionAnalysisQuery(days: number = 30) {
         COUNT(DISTINCT CASE WHEN event_name = 'Click_CashWalletConfirmConvert'
           THEN user_pseudo_id END) as manual_convert_users,
         COUNT(DISTINCT CASE WHEN event_name IN ('app_store_subscription_convert', 'app_store_subscription_renew', 'iap_success', 'in_app_purchase')
-          AND product_id LIKE '%subscription%'
+          AND ${SUBSCRIPTION_PAID_PRODUCT}
           THEN user_pseudo_id END) as paid_sub_users,
         COUNT(DISTINCT CASE WHEN event_name = 'wallet_subscribe_success'
           THEN user_pseudo_id END) as wallet_sub_users,
@@ -2025,9 +2043,9 @@ export function getSubscriptionAnalysisQuery(days: number = 30) {
           THEN user_pseudo_id END) as nonmember_hint_users,
         COUNT(DISTINCT CASE WHEN event_name = 'click_membership_entry'
           THEN user_pseudo_id END) as membership_entry_users,
-        COUNT(DISTINCT CASE WHEN event_name = 'iap_start' AND product_id LIKE '%subscription%'
+        COUNT(DISTINCT CASE WHEN event_name = 'iap_start' AND ${SUBSCRIPTION_IAP_FLOW_PRODUCT}
           THEN user_pseudo_id END) as iap_start_users,
-        COUNT(DISTINCT CASE WHEN event_name = 'iap_fail' AND product_id LIKE '%subscription%'
+        COUNT(DISTINCT CASE WHEN event_name = 'iap_fail' AND ${SUBSCRIPTION_IAP_FLOW_PRODUCT}
           THEN user_pseudo_id END) as iap_fail_users,
         COUNT(DISTINCT CASE WHEN event_name = 'iap_start' AND product_id LIKE 'top-up%'
           THEN user_pseudo_id END) as topup_start_users,
@@ -2043,7 +2061,7 @@ export function getSubscriptionAnalysisQuery(days: number = 30) {
         COUNT(DISTINCT CASE WHEN event_name = 'Click_CashWalletConfirmConvert'
           THEN user_pseudo_id END) as total_manual_convert,
         COUNT(DISTINCT CASE WHEN event_name IN ('app_store_subscription_convert','app_store_subscription_renew', 'iap_success','in_app_purchase')
-          AND product_id LIKE '%subscription%'
+          AND ${SUBSCRIPTION_PAID_PRODUCT}
           THEN user_pseudo_id END) as total_paid_sub,
         COUNT(DISTINCT CASE WHEN event_name = 'wallet_subscribe_success'
           THEN user_pseudo_id END) as total_wallet_sub,
@@ -2051,9 +2069,9 @@ export function getSubscriptionAnalysisQuery(days: number = 30) {
           THEN user_pseudo_id END) as total_nonmember_hint,
         COUNT(DISTINCT CASE WHEN event_name = 'click_membership_entry'
           THEN user_pseudo_id END) as total_membership_entry,
-          COUNT(DISTINCT CASE WHEN event_name = 'iap_start' AND product_id LIKE '%subscription%'
+          COUNT(DISTINCT CASE WHEN event_name = 'iap_start' AND ${SUBSCRIPTION_IAP_FLOW_PRODUCT}
           THEN user_pseudo_id END) as total_iap_start,
-        COUNT(DISTINCT CASE WHEN event_name = 'iap_fail' AND product_id LIKE '%subscription%' AND product_id NOT LIKE 'top-up%'
+        COUNT(DISTINCT CASE WHEN event_name = 'iap_fail' AND ${SUBSCRIPTION_IAP_FLOW_PRODUCT} AND COALESCE(product_id, '') NOT LIKE 'top-up%'
           THEN user_pseudo_id END) as total_iap_fail,
         COUNT(DISTINCT CASE WHEN event_name IN ('auto_convert_trigger',
           'Click_CashWalletConfirmConvert') THEN user_pseudo_id END) as total_exchange_users,
@@ -2075,19 +2093,14 @@ export function getSubscriptionAnalysisQuery(days: number = 30) {
         AND event_name = 'Click_CashWalletConfirmConvert'
       GROUP BY 1
     ),
-    -- Subscription plan revenue: purchase/in_app_purchase with subscription product_type/item_category/product_id (same as Monetization Subscription stream)
+    -- Paid Sub Revenue: same classification as Monetization Subscription slice (exclusive SKUs + iap_success rule + store subs)
     sub_plan_revenue AS (
       SELECT COALESCE(SUM(event_value_in_usd), 0) as amt
       FROM \`${dataset()}.${table()}\`
       WHERE ${tableFilter(days)}
         AND event_name IN ('purchase', 'in_app_purchase', 'app_store_subscription_convert', 'app_store_subscription_renew', 'iap_success')
         AND event_value_in_usd > 0
-        AND (
-          event_name IN ('app_store_subscription_convert', 'app_store_subscription_renew', 'iap_success', 'in_app_purchase')
-          OR LOWER(COALESCE((SELECT value.string_value FROM UNNEST(event_params) WHERE key = 'product_type'), '')) LIKE '%sub%'
-          OR LOWER(COALESCE((SELECT value.string_value FROM UNNEST(event_params) WHERE key = 'item_category'), '')) LIKE '%sub%'
-          OR COALESCE((SELECT value.string_value FROM UNNEST(event_params) WHERE key = 'product_id'), '') LIKE '%subscription%'
-        )
+        AND ${SUBSCRIPTION_PAID_PRODUCT_PARAMS}
     )
     SELECT
       (SELECT ARRAY_AGG(STRUCT(date, dt, auto_convert_users, manual_convert_users,
@@ -2224,7 +2237,7 @@ export function getFlywheelQuery(days: number = 30) {
     dau_stats AS (
       SELECT 
         COUNT(DISTINCT user_pseudo_id) as total_pseudo_active,
-        COUNT(DISTINCT user_id) as total_active
+        COUNT(DISTINCT case when event_name = 'Enter_NewUserLandSupPage' then user_id else null end) as total_active
       FROM base
     ),
     -- Payers

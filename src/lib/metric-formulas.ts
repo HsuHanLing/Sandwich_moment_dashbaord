@@ -313,21 +313,24 @@ export const METRIC_FORMULAS: Record<string, { formula: string; description: str
   },
   SUB_PAID: {
     formula:
-      "COUNT(DISTINCT user_pseudo_id) WHERE event_name IN ('app_store_subscription_convert','app_store_subscription_renew','iap_success','in_app_purchase') AND product_id LIKE '%subscription%'",
+      "COUNT(DISTINCT user_pseudo_id) WHERE event_name IN ('app_store_subscription_convert','app_store_subscription_renew','iap_success','in_app_purchase') AND (COALESCE(product_id,'') IN ('exclusivemonthly','exclusiveaccess') OR (event_name='iap_success' AND product_id LIKE '%subscription%') OR event_name IN ('app_store_subscription_convert','app_store_subscription_renew'))",
     description:
-      "Paid (real $) subscription users: same events as subscription analysis daily/totals; product_id must include 'subscription' (excludes top-up and non-subscription IAP). Excludes wallet_subscribe_success.",
+      "Paid (real $) subscription users: product_id exclusivemonthly or exclusiveaccess; or iap_success with product_id LIKE '%subscription%'; or App Store subscription convert/renew. Excludes wallet_subscribe_success (in-app cash wallet) and top-up.",
   },
   SUB_WALLET: {
     formula: "COUNT(DISTINCT user_pseudo_id) WHERE event_name = 'wallet_subscribe_success'",
     description: "Users who subscribed using in-app cash or diamond balance (wallet_subscribe_success). Not real money. Does not contribute to Paid Sub Revenue.",
   },
   SUB_PAID_REVENUE: {
-    formula: "SUM(event_value_in_usd) WHERE event_name IN ('purchase','in_app_purchase','app_store_subscription_convert','app_store_subscription_renew','iap_success') AND subscription filters (product_type/item_category/product_id or store subscription events)",
-    description: "Subscription plan revenue: same filters as the Subscription Analysis BigQuery (store subscription events, iap_success, in_app_purchase when classified as subscription). Excludes wallet (in-app cash) and top-up.",
+    formula:
+      "SUM(event_value_in_usd) WHERE event_name IN ('purchase','in_app_purchase','app_store_subscription_convert','app_store_subscription_renew','iap_success') AND same subscription classification as SUB_PAID (exclusive SKUs + iap_success rule + store subs)",
+    description:
+      "Real-money subscription revenue: same product rules as SUB_PAID (exclusivemonthly/exclusiveaccess, iap_success+subscription SKU, or App Store subscription events). Excludes wallet (in-app cash) and top-up.",
   },
   SUB_IAP_SUCCESS: {
     formula: "(Subscription paid users / Subscription IAP start users) × 100%",
-    description: "Subscription IAP success rate: % of users who started a subscription purchase flow (product_id='subscription') and completed payment. Top-up purchases excluded.",
+    description:
+      "Subscription IAP success rate: paid users (SUB_PAID) divided by users who started a subscription IAP (iap_start with exclusive SKUs or product_id LIKE '%subscription%'). Top-up starts excluded.",
   },
   // Flywheel
   FW_ACTIVE_USERS: {
