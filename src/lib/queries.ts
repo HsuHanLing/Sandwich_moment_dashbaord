@@ -1563,10 +1563,10 @@ export function getPaidUsersFirstPayDistQuery(days: number = 30) {
   `;
 }
 
-// Repurchase: lifetime in_app_purchase excluding subscription product_ids (exclusivemonthly, exclusiveaccess, subscription); all user-facing counts use COUNT(DISTINCT user_pseudo_id) (daily spine, KPIs, cohorts, platform, frequency); avg_days_to_second is AVG over one row per user.
+// Repurchase: qualifying in_app_purchase over last 60 days (rolling); excludes subscription SKUs; DISTINCT user_pseudo_id for user counts; `days` only drives the daily trend spine.
 export function getRepurchaseQuery(days: number = 30) {
-  /** ~3y export window — balances lifetime semantics vs scan cost (was 10y). */
-  const life = 1095;
+  /** Event scan for ROW_NUMBER / first & second IAP — fixed 60 calendar days (`lifetimeTableFilter`). */
+  const lookback = 60;
   return `
 WITH success_purchases AS (
   SELECT
@@ -1576,7 +1576,7 @@ WITH success_purchases AS (
     COALESCE(NULLIF(TRIM(UPPER(platform)), ''), 'UNKNOWN') AS platform,
     ROW_NUMBER() OVER (PARTITION BY user_pseudo_id ORDER BY event_timestamp ASC) AS rn
   FROM \`${dataset()}.${table()}\`
-  WHERE ${lifetimeTableFilter(life)}
+  WHERE ${lifetimeTableFilter(lookback)}
     AND event_name = 'in_app_purchase'
     AND COALESCE(
       (SELECT value.string_value FROM UNNEST(event_params) WHERE key = 'product_id' LIMIT 1),

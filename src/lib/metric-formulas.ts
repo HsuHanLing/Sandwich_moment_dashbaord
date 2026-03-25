@@ -273,14 +273,14 @@ export const METRIC_FORMULAS: Record<string, { formula: string; description: str
     description: "Median number of days from signup to first purchase.",
   },
   PAID_REPURCHASE_LIFETIME_BASE: {
-    formula: "COUNT(DISTINCT user) WHERE ≥1 in_app_purchase (lifetime, export window)",
+    formula: "COUNT(DISTINCT user) WHERE ≥1 qualifying in_app_purchase in last 60 days",
     description:
-      "Users with at least one qualifying in_app_purchase in the repurchase lifetime scan (~3y), excluding product_id IN (exclusivemonthly, exclusiveaccess, subscription). Denominator for repurchase rate.",
+      "Users with at least one qualifying in_app_purchase in the rolling 60-day repurchase scan, excluding product_id IN (exclusivemonthly, exclusiveaccess, subscription). Denominator for repurchase rate. First purchase means first qualifying IAP in that window, not all-time.",
   },
   PAID_REPURCHASERS: {
-    formula: "COUNT(users) WHERE ≥2 in_app_purchase events (lifetime, by timestamp order)",
+    formula: "COUNT(users) WHERE ≥2 qualifying in_app_purchase in last 60 days (by timestamp order)",
     description:
-      "Unique users with at least two qualifying in_app_purchase events (lifetime): same product_id exclusions as repurchase SQL. First and second purchase are the 1st and 2nd in_app_purchase by event_timestamp in the scan window (~3y). Frequency chart buckets: 2, 3, 4, 5+ total purchases.",
+      "Unique users with at least two qualifying in_app_purchase events in the same 60-day window; same product_id exclusions as repurchase SQL. First and second are the 1st and 2nd IAP by event_timestamp in the window. Frequency buckets: 2, 3, 4, 5+ in-window purchase counts.",
   },
   PAID_REPURCHASE_RATE: {
     formula: "COUNT(DISTINCT repurchasers) / COUNT(DISTINCT users with ≥1 qualifying IAP)",
@@ -302,9 +302,9 @@ export const METRIC_FORMULAS: Record<string, { formula: string; description: str
   },
   PAID_REPURCHASE_FREQUENCY_BUCKETS: {
     formula:
-      "Among users with ≥2 qualifying in_app_purchase events: COUNT per bucket where total purchases = 2, 3, 4, or ≥5; product_id NOT IN (exclusivemonthly, exclusiveaccess, subscription).",
+      "Among users with ≥2 qualifying IAPs in the 60-day window: COUNT per bucket where in-window count = 2, 3, 4, or ≥5; product_id NOT IN (exclusivemonthly, exclusiveaccess, subscription).",
     description:
-      "Splits repurchasers by lifetime purchase count in the repurchase export window: exactly 2, 3, 4, or five or more qualifying IAPs (after SKU exclusions). Percentages are shares of all repurchasers (sum of buckets equals Repurchasers).",
+      "Splits repurchasers by total qualifying IAP count within the 60-day scan: exactly 2, 3, 4, or five or more (after SKU exclusions). Percentages are shares of all repurchasers.",
   },
   PAID_REVENUE_TOTAL: {
     formula: "SUM(event_value_in_usd) WHERE event_name IN ('purchase','in_app_purchase','iap_success')",
