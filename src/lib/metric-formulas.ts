@@ -251,8 +251,10 @@ export const METRIC_FORMULAS: Record<string, { formula: string; description: str
   },
   // Paid Users
   PAID_TOTAL_PAYERS: {
-    formula: "COUNT(DISTINCT user_pseudo_id) WHERE event_name IN ('purchase','in_app_purchase','iap_success')",
-    description: "Total unique users who made at least one purchase in the period. Includes GA4 auto-tracked and iap_success events.",
+    formula:
+      "COUNT(DISTINCT user_pseudo_id) WHERE event_name IN ('purchase','in_app_purchase','app_store_subscription_convert','app_store_subscription_renew')",
+    description:
+      "Total unique users with at least one qualifying event in the period: GA4 purchase and in_app_purchase, plus App Store subscription convert/renew. Excludes iap_success.",
   },
   PAID_D7_RETENTION: {
     formula:
@@ -307,8 +309,10 @@ export const METRIC_FORMULAS: Record<string, { formula: string; description: str
       "Splits repurchasers by total qualifying IAP count within the 60-day scan: exactly 2, 3, 4, or five or more (after SKU exclusions). Percentages are shares of all repurchasers.",
   },
   PAID_REVENUE_TOTAL: {
-    formula: "SUM(event_value_in_usd) WHERE event_name IN ('purchase','in_app_purchase','iap_success')",
-    description: "Total revenue from all purchases in the selected period, including GA4 auto-tracked and iap_success events.",
+    formula:
+      "SUM(event_value_in_usd) WHERE event_name IN ('purchase','in_app_purchase','app_store_subscription_convert','app_store_subscription_renew') AND event_value_in_usd > 0",
+    description:
+      "Total revenue in the selected period from the same event set as Total Payers (purchase, in_app_purchase, App Store subscription convert/renew). Rows with zero or negative value are excluded.",
   },
   // Subscription / VIP
   SUB_TOTAL: {
@@ -333,7 +337,7 @@ export const METRIC_FORMULAS: Record<string, { formula: string; description: str
     formula:
       "SUM(event_value_in_usd) WHERE event_name IN ('purchase','in_app_purchase','iap_success','app_store_subscription_convert','app_store_subscription_renew') AND event_value_in_usd > 0 AND (same product_id predicates as SUB_PAID)",
     description:
-      "Real-money subscription revenue: same rules as SUB_PAID and Monetization “Subscription” slice—exclusivemonthly/exclusiveaccess, iap_success with product_id containing 'subscription', or App Store subscription convert/renew. Used for Paid Users “Subscription” share and Subscription / VIP Paid Sub Revenue. Excludes wallet and top-up.",
+      "Real-money subscription revenue: same rules as SUB_PAID and Monetization “Subscription” slice—exclusivemonthly/exclusiveaccess, iap_success with product_id containing 'subscription', or App Store subscription convert/renew. On the Paid Users panel, only events included in the Paid KPI filter apply (purchase, in_app_purchase, subscription convert/renew), so revenue that appears only on iap_success is not in that share. Excludes wallet and top-up.",
   },
   SUB_ANALYSIS_INTRO: {
     formula: "See SUB_PAID, SUB_WALLET, SUB_EXCHANGE, SUB_PAID_REVENUE",

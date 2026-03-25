@@ -1446,14 +1446,14 @@ export function getPaidUsersKPIQuery(days: number = 30) {
       FROM \`${dataset()}.${table()}\`
       WHERE ${tableFilter(days)}
         AND event_name IN ('purchase','in_app_purchase',
-          'app_store_subscription_convert','app_store_subscription_renew', 'iap_success')
+          'app_store_subscription_convert','app_store_subscription_renew')
     ),
     all_time_first AS (
       SELECT user_pseudo_id, MIN(PARSE_DATE('%Y%m%d', event_date)) as first_pay_dt, count(*) as pay_count
       FROM \`${dataset()}.${table()}\`
       WHERE ${tableSuffixSince(lookback)}
         AND event_name IN ('purchase','in_app_purchase',
-          'app_store_subscription_convert','app_store_subscription_renew', 'iap_success')
+          'app_store_subscription_convert','app_store_subscription_renew')
       GROUP BY 1
     ),
     payer_classify AS (
@@ -1465,7 +1465,7 @@ export function getPaidUsersKPIQuery(days: number = 30) {
     sub_revenue AS (
       SELECT
         COALESCE(SUM(CASE
-          WHEN event_name IN ('purchase','in_app_purchase','iap_success',
+          WHEN event_name IN ('purchase','in_app_purchase',
             'app_store_subscription_convert','app_store_subscription_renew')
             AND ${SUBSCRIPTION_PAID_PRODUCT_PARAMS}
           THEN event_value_in_usd
@@ -1474,7 +1474,7 @@ export function getPaidUsersKPIQuery(days: number = 30) {
         COALESCE(SUM(event_value_in_usd), 0) as total_revenue
       FROM \`${dataset()}.${table()}\`
       WHERE ${tableFilter(days)}
-        AND event_name IN ('purchase','in_app_purchase','iap_success',
+        AND event_name IN ('purchase','in_app_purchase',
           'app_store_subscription_convert','app_store_subscription_renew')
         AND event_value_in_usd > 0
     )
@@ -1715,7 +1715,7 @@ FROM user_lifetime
 `;
 }
 
-// Paid Users: geo distribution of payers (purchase, in_app_purchase, iap_success — aligned with paid KPIs)
+// Paid Users: geo distribution of payers (aligned with getPaidUsersKPIQuery — no iap_success)
 export function getPaidUsersGeoQuery(days: number = 30) {
   return `
     SELECT
@@ -1725,7 +1725,8 @@ export function getPaidUsersGeoQuery(days: number = 30) {
       COALESCE(SUM(event_value_in_usd), 0) as revenue
     FROM \`${dataset()}.${table()}\`
     WHERE ${tableFilter(days)}
-      AND event_name IN ('purchase','in_app_purchase','iap_success')
+      AND event_name IN ('purchase','in_app_purchase',
+        'app_store_subscription_convert','app_store_subscription_renew')
     GROUP BY geo.country
     ORDER BY payers DESC
     LIMIT 15

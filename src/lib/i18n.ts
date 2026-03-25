@@ -212,7 +212,8 @@ export const translations = {
     withdrawAmountDist: "Amount per user (USD)",
     withdrawBucket: "Amount (USD)",
     paidUsers: "Paid User Analysis",
-    paidUsersDesc: "Paying user KPIs, repurchase (60-day window), D7 retention, ARPPU, and time-to-first-purchase distribution",
+    paidUsersDesc:
+      "Paying user KPIs (purchase, in_app_purchase, App Store subscription events; excludes iap_success), repurchase (in_app_purchase, 60-day window), D7 retention, ARPPU, and time-to-first-purchase distribution",
     paidTotalPayers: "Total Payers",
     paidRevenue: "Total Revenue",
     paidAvgPurchases: "Avg Purchases / User",
@@ -568,7 +569,8 @@ export const translations = {
     withdrawAmountDist: "人均提现金额 (USD)",
     withdrawBucket: "金额 (USD)",
     paidUsers: "付费用户分析",
-    paidUsersDesc: "付费用户 KPI、复购（60 天窗口）、D7 留存、ARPPU、首次付费时间分布",
+    paidUsersDesc:
+      "付费用户 KPI（purchase、in_app_purchase、应用商店订阅事件；不含 iap_success）、复购（in_app_purchase，60 天窗口）、D7 留存、ARPPU、首次付费时间分布",
     paidTotalPayers: "付费用户数",
     paidRevenue: "总收入",
     paidAvgPurchases: "人均购买次数",
