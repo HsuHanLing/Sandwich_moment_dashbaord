@@ -264,9 +264,10 @@ export function PaidUsersSection({ data, geo, analyticsDays, t }: Props) {
                     />
                     <YAxis tick={{ fontSize: 10, fill: "var(--secondary-text)" }} allowDecimals={false} width={40} />
                     <RechartsTooltip
-                      formatter={(value: number | string, _name, item) => {
+                      formatter={(value, _name, item) => {
+                        const n = value == null ? 0 : Number(value);
                         const pct = (item?.payload as { pct?: number } | undefined)?.pct ?? 0;
-                        return [`${Number(value).toLocaleString()} (${pct}%)`, t("paidRepurchaseFrequencyUsers")];
+                        return [`${n.toLocaleString()} (${pct}%)`, t("paidRepurchaseFrequencyUsers")];
                       }}
                       labelFormatter={(label) => `${t("paidRepurchaseFrequencyTotalPurchases")}: ${label}`}
                       contentStyle={{ fontSize: 11, backgroundColor: "var(--card-bg)", border: "1px solid var(--border)", borderRadius: 8 }}
