@@ -81,16 +81,6 @@ export function CreatorSupplyChart({ data }: { data: CreatorSupplyData }) {
     { metric: "$UP Unlock Success", KOL: kol.up_unlock_success, Influencer: inf.up_unlock_success },
   ];
 
-  const revenueChart: ChartRow[] = [
-    { metric: "$UP Revenue", KOL: kol.up_revenue, Influencer: inf.up_revenue },
-  ];
-
-  const rateData = [
-    { name: "SUP like / click play", KOL: Math.min(100, Math.max(0, kol.sup_like_rate)), Influencer: Math.min(100, Math.max(0, inf.sup_like_rate)) },
-    { name: "$UP unlock / click", KOL: Math.min(100, Math.max(0, kol.up_unlock_success_rate)), Influencer: Math.min(100, Math.max(0, inf.up_unlock_success_rate)) },
-    { name: "$UP like / unlock", KOL: Math.min(100, Math.max(0, kol.up_like_rate)), Influencer: Math.min(100, Math.max(0, inf.up_like_rate)) },
-  ];
-
   const supRows: { label: string; kol: string; inf: string }[] = [
     { label: "Click Play (events)", kol: fmt(kol.sup_click_play), inf: fmt(inf.sup_click_play) },
     { label: "Click Play (UV)", kol: fmt(kol.sup_click_play_uv), inf: fmt(inf.sup_click_play_uv) },
@@ -109,11 +99,6 @@ export function CreatorSupplyChart({ data }: { data: CreatorSupplyData }) {
     { label: "Like Count", kol: fmt(kol.up_like_count), inf: fmt(inf.up_like_count) },
     { label: "Like UV", kol: fmt(kol.up_like_uv), inf: fmt(inf.up_like_uv) },
     { label: "Like Rate (like / unlock success)", kol: `${kol.up_like_rate}%`, inf: `${inf.up_like_rate}%` },
-  ];
-
-  const extraRows: { label: string; kol: string; inf: string }[] = [
-    { label: "Circle Events", kol: fmt(kol.circle_events), inf: fmt(inf.circle_events) },
-    { label: "Explore Events", kol: fmt(kol.explore_events), inf: fmt(inf.explore_events) },
   ];
 
   return (
@@ -149,48 +134,8 @@ export function CreatorSupplyChart({ data }: { data: CreatorSupplyData }) {
         </div>
       </div>
 
-      <div>
-        <h4 className="mb-2 text-xs font-medium text-[var(--secondary-text)]">$UP revenue (USD) — KOL vs Influencer</h4>
-        <div className="h-[140px] w-full">
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={revenueChart} margin={{ top: 8, right: 10, left: 8, bottom: 8 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" opacity={0.5} />
-              <XAxis dataKey="metric" tick={{ fontSize: 11, fill: "var(--secondary-text)" }} axisLine={false} tickLine={false} />
-              <YAxis
-                tick={{ fontSize: 11, fill: "var(--secondary-text)" }}
-                axisLine={false}
-                tickLine={false}
-                tickFormatter={(v) => fmtMoney(v)}
-              />
-              <Tooltip {...chartTooltip} formatter={(value?: number, name?: string) => [fmtMoney(value ?? 0), name ?? ""]} />
-              <Legend wrapperStyle={{ fontSize: 11 }} iconSize={10} />
-              <Bar dataKey="KOL" fill="#4285f4" radius={[4, 4, 0, 0]} />
-              <Bar dataKey="Influencer" fill="#34a853" radius={[4, 4, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-      </div>
-
-      <div>
-        <h4 className="mb-2 text-xs font-medium text-[var(--secondary-text)]">Rates (%) — KOL vs Influencer</h4>
-        <div className="h-[220px] w-full">
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart layout="vertical" data={rateData} margin={{ top: 4, right: 16, left: 4, bottom: 4 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" opacity={0.5} horizontal={false} />
-              <XAxis type="number" domain={[0, 100]} tick={{ fontSize: 10, fill: "var(--secondary-text)" }} tickFormatter={(v) => `${v}%`} />
-              <YAxis type="category" dataKey="name" width={168} tick={{ fontSize: 9, fill: "var(--secondary-text)" }} />
-              <Tooltip {...chartTooltip} formatter={(value?: number, name?: string) => [`${Number(value ?? 0).toFixed(1)}%`, name ?? ""]} />
-              <Legend wrapperStyle={{ fontSize: 11 }} iconSize={10} />
-              <Bar dataKey="KOL" fill="#4285f4" radius={[0, 3, 3, 0]} />
-              <Bar dataKey="Influencer" fill="#34a853" radius={[0, 3, 3, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-      </div>
-
       <MetricTable title="SUP Metrics (Free Content)" rows={supRows} />
       <MetricTable title="$UP Metrics (Paid Content)" rows={upRows} />
-      <MetricTable title="Profile & Source Breakdown" rows={extraRows} />
     </div>
   );
 }
