@@ -306,7 +306,7 @@ export function getDailyTrendQuery(days: number = 7, filters?: OverviewFilters) 
       FROM \`${dataset()}.${table()}\`
       WHERE ${tableFilterIntradayOnly(days)}${extra}
       GROUP BY 1, 2
-    )
+    ),
     daily AS (
       SELECT
         COALESCE(d.date, i.date) as date,
