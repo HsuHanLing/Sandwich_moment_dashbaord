@@ -11,6 +11,26 @@ export type MetricInfo = { name: string; formula: string; description: string };
 
 export const METRIC_FORMULAS: Record<string, MetricInfo> = {
   /* ─── Overview KPIs ─── */
+  CHATTERS: {
+    name: "Chatters",
+    formula: "COUNT(DISTINCT user_pseudo_id) WHERE event = message_send",
+    description: "Unique users who sent at least one message on that day.",
+  },
+  TOTAL_MESSAGES: {
+    name: "Total Messages",
+    formula: "COUNT(*) WHERE event = message_send",
+    description: "Total number of message_send events fired on that day across all users and sessions.",
+  },
+  SESSIONS: {
+    name: "Sessions",
+    formula: "COUNT(*) WHERE event = chat_entry_click",
+    description: "Total chat sessions started on that day (each chat_entry_click = one session start).",
+  },
+  DISPOSED_SESSIONS: {
+    name: "Disposed Sessions",
+    formula: "COUNT(*) WHERE event = chat_session_dispose",
+    description: "Sessions that were formally ended (disposed). A disposed session has a recorded message count and trigger type.",
+  },
   DAU: {
     name: "DAU (Daily Active Users)",
     formula: "COUNT(DISTINCT user_pseudo_id) per day",

@@ -43,10 +43,10 @@ export function DailyTrendTable({ data }: { data: DailyRow[] }) {
             <th className="px-3 py-2 font-medium">Date</th>
             <TH metricKey="DAU">DAU</TH>
             <TH metricKey="NEW_USERS">New</TH>
-            <TH>Chatters</TH>
-            <TH metricKey="AVG_MSGS_PER_SESSION">Messages</TH>
-            <TH metricKey="SESSIONS_PER_USER">Sessions</TH>
-            <TH metricKey="DISPOSE_RATE">Disposed</TH>
+            <TH metricKey="CHATTERS">Chatters</TH>
+            <TH metricKey="TOTAL_MESSAGES">Messages</TH>
+            <TH metricKey="SESSIONS">Sessions</TH>
+            <TH metricKey="DISPOSED_SESSIONS">Disposed</TH>
             <TH metricKey="AVG_MSGS_PER_SESSION">Avg Msgs</TH>
             <TH metricKey="AVG_SESSION_DURATION">Avg Dur(s)</TH>
             <TH metricKey="ACTIVATION_RATE">Act %</TH>
