@@ -16,6 +16,10 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "Moment Analytics",
   description: "AI Chat App analytics dashboard — session-based emotional interaction",
+  icons: {
+    icon: "/moment-logo.png",
+    apple: "/moment-logo.png",
+  },
 };
 
 export default function RootLayout({

@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useEffect, useState, useRef, useCallback } from "react";
 import { KPICard } from "@/components/KPICard";
 import { DailyTrendChart } from "@/components/DailyTrendChart";
@@ -220,7 +221,15 @@ export default function DashboardPage() {
       {/* Header */}
       <header className="sticky top-0 z-10 border-b border-[var(--border)] bg-[var(--card-bg)]/95 backdrop-blur-xl">
         <div className="mx-auto flex w-full max-w-[1600px] items-center justify-between px-4 py-3 sm:px-8">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2.5">
+            <Image
+              src="/moment-logo.png"
+              alt="Moment"
+              width={36}
+              height={36}
+              className="h-9 w-9 shrink-0 rounded-lg object-contain"
+              priority
+            />
             <span className="text-base font-semibold tracking-tight text-[var(--foreground)]">{t("title")}</span>
           </div>
           <div className="flex items-center gap-3">
