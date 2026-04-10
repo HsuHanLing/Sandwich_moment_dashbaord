@@ -1,6 +1,7 @@
 "use client";
 
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
+import { MetricInfoTooltip } from "@/components/MetricInfoTooltip";
 
 type Props = {
   data: {
@@ -30,15 +31,16 @@ export function SessionQualitySection({ data, loading, t }: Props) {
           <h2 className="text-base font-semibold tracking-tight">{t("sessionTitle")}</h2>
           <p className="mt-0.5 text-xs text-[var(--secondary-text)]">{t("sessionDesc")}</p>
           <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5">
-            <SummaryCard label={t("totalSessions")} value={s.total_sessions?.toLocaleString() ?? "0"} />
-            <SummaryCard label={t("avgMessages")} value={String(s.avg_messages ?? 0)} />
-            <SummaryCard label={t("avgDuration")} value={`${s.avg_duration_sec ?? 0}s`} />
-            <SummaryCard label={t("deepRate")} value={`${s.deep_conversation_rate ?? 0}%`} accent />
-            <SummaryCard label={t("shallowRate")} value={`${s.shallow_rate ?? 0}%`} />
-            <SummaryCard label={t("medianMsgs")} value={String(s.median_messages ?? 0)} />
-            <SummaryCard label={t("medianDuration")} value={`${s.median_duration_sec ?? 0}s`} />
-            <SummaryCard label={t("disposeSwipe")} value={String(s.dispose_swipe ?? 0)} />
-            <SummaryCard label={t("disposePopup")} value={String(s.dispose_popup ?? 0)} />
+            <SummaryCard label={t("totalSessions")} value={s.total_sessions?.toLocaleString() ?? "0"} metricKey="TOTAL_SESSIONS" />
+            <SummaryCard label={t("avgMessages")} value={String(s.avg_messages ?? 0)} metricKey="AVG_MSGS_PER_SESSION" />
+            <SummaryCard label={t("avgDuration")} value={`${s.avg_duration_sec ?? 0}s`} metricKey="AVG_SESSION_DURATION" />
+            <SummaryCard label={t("deepRate")} value={`${s.deep_conversation_rate ?? 0}%`} accent metricKey="DEEP_CONVERSATION_RATE" />
+            <SummaryCard label={t("shallowRate")} value={`${s.shallow_rate ?? 0}%`} metricKey="SHALLOW_RATE" />
+            <SummaryCard label="Valid Sessions" value={`${s.valid_sessions?.toLocaleString() ?? 0} (${s.valid_session_rate ?? 0}%)`} metricKey="VALID_SESSION" />
+            <SummaryCard label={t("medianMsgs")} value={String(s.median_messages ?? 0)} metricKey="MEDIAN_MESSAGES" />
+            <SummaryCard label={t("medianDuration")} value={`${s.median_duration_sec ?? 0}s`} metricKey="MEDIAN_DURATION" />
+            <SummaryCard label={t("disposeSwipe")} value={String(s.dispose_swipe ?? 0)} metricKey="DISPOSE_SWIPE" />
+            <SummaryCard label={t("disposePopup")} value={String(s.dispose_popup ?? 0)} metricKey="DISPOSE_POPUP" />
           </div>
         </div>
       </section>
@@ -81,11 +83,13 @@ export function SessionQualitySection({ data, loading, t }: Props) {
   );
 }
 
-function SummaryCard({ label, value, accent }: { label: string; value: string; accent?: boolean }) {
-  return (
+function SummaryCard({ label, value, accent, metricKey }: { label: string; value: string; accent?: boolean; metricKey?: string }) {
+  const card = (
     <div className="rounded-lg bg-[var(--background)] px-3 py-2.5" style={{ border: "1px solid var(--border)" }}>
       <p className="text-[10px] font-medium text-[var(--secondary-text)]">{label}</p>
       <p className={`mt-1 text-lg font-semibold ${accent ? "text-[var(--accent)]" : "text-[var(--foreground)]"}`}>{value}</p>
     </div>
   );
+  if (!metricKey) return card;
+  return <MetricInfoTooltip metricKey={metricKey}>{card}</MetricInfoTooltip>;
 }

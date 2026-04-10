@@ -124,14 +124,14 @@ export function getKPIAndWowQuery(mode: "today" | "7d" | "30d", filters?: Overvi
         COUNT(DISTINCT user_pseudo_id) as dau,
         COUNT(DISTINCT CASE WHEN event_name = 'guide_energy_show'
           AND ${paramStr('user_status')} = 'new' THEN user_pseudo_id END) as new_users,
+        COUNT(DISTINCT CASE WHEN event_name = 'guide_energy_show'
+          THEN user_pseudo_id END) as guide_users,
         COUNT(DISTINCT CASE WHEN event_name = 'message_send' THEN user_pseudo_id END) as chatters,
         COUNT(CASE WHEN event_name = 'message_send' THEN 1 END) as total_messages,
         COUNT(CASE WHEN event_name = 'chat_session_dispose' THEN 1 END) as disposed_sessions,
         COUNT(CASE WHEN event_name = 'chat_entry_click' THEN 1 END) as total_sessions,
-        AVG(CASE WHEN event_name = 'chat_session_dispose'
-          THEN ${paramInt('message_count')} END) as avg_msgs_per_session,
-        AVG(CASE WHEN event_name = 'chat_session_dispose'
-          THEN ${paramInt('session_duration')} END) as avg_session_duration,
+        COUNTIF(event_name = 'chat_session_dispose' AND ${paramInt('message_count')} >= 1) as valid_sessions,
+        COUNTIF(event_name = 'chat_session_dispose' AND ${paramInt('message_count')} >= 10) as deep_sessions,
         COUNT(DISTINCT CASE WHEN event_name = 'recharge_result'
           AND ${paramStr('status')} = 'success' THEN user_pseudo_id END) as recharge_payers,
         COALESCE(SUM(CASE WHEN event_name IN ('recharge_result','membership_success_toast')
@@ -148,14 +148,14 @@ export function getKPIAndWowQuery(mode: "today" | "7d" | "30d", filters?: Overvi
         COUNT(DISTINCT user_pseudo_id) as dau,
         COUNT(DISTINCT CASE WHEN event_name = 'guide_energy_show'
           AND ${paramStr('user_status')} = 'new' THEN user_pseudo_id END) as new_users,
+        COUNT(DISTINCT CASE WHEN event_name = 'guide_energy_show'
+          THEN user_pseudo_id END) as guide_users,
         COUNT(DISTINCT CASE WHEN event_name = 'message_send' THEN user_pseudo_id END) as chatters,
         COUNT(CASE WHEN event_name = 'message_send' THEN 1 END) as total_messages,
         COUNT(CASE WHEN event_name = 'chat_session_dispose' THEN 1 END) as disposed_sessions,
         COUNT(CASE WHEN event_name = 'chat_entry_click' THEN 1 END) as total_sessions,
-        AVG(CASE WHEN event_name = 'chat_session_dispose'
-          THEN ${paramInt('message_count')} END) as avg_msgs_per_session,
-        AVG(CASE WHEN event_name = 'chat_session_dispose'
-          THEN ${paramInt('session_duration')} END) as avg_session_duration,
+        COUNTIF(event_name = 'chat_session_dispose' AND ${paramInt('message_count')} >= 1) as valid_sessions,
+        COUNTIF(event_name = 'chat_session_dispose' AND ${paramInt('message_count')} >= 10) as deep_sessions,
         COUNT(DISTINCT CASE WHEN event_name = 'recharge_result'
           AND ${paramStr('status')} = 'success' THEN user_pseudo_id END) as recharge_payers,
         COALESCE(SUM(CASE WHEN event_name IN ('recharge_result','membership_success_toast')
@@ -171,24 +171,58 @@ export function getKPIAndWowQuery(mode: "today" | "7d" | "30d", filters?: Overvi
         COALESCE(d.dt, i.dt) as dt,
         IF(d.dt IS NOT NULL, d.dau, i.dau) as dau,
         IF(d.dt IS NOT NULL, d.new_users, i.new_users) as new_users,
+        IF(d.dt IS NOT NULL, d.guide_users, i.guide_users) as guide_users,
         IF(d.dt IS NOT NULL, d.chatters, i.chatters) as chatters,
         IF(d.dt IS NOT NULL, d.total_messages, i.total_messages) as total_messages,
         IF(d.dt IS NOT NULL, d.disposed_sessions, i.disposed_sessions) as disposed_sessions,
         IF(d.dt IS NOT NULL, d.total_sessions, i.total_sessions) as total_sessions,
-        IF(d.dt IS NOT NULL, d.avg_msgs_per_session, i.avg_msgs_per_session) as avg_msgs_per_session,
-        IF(d.dt IS NOT NULL, d.avg_session_duration, i.avg_session_duration) as avg_session_duration,
+        IF(d.dt IS NOT NULL, d.valid_sessions, i.valid_sessions) as valid_sessions,
+        IF(d.dt IS NOT NULL, d.deep_sessions, i.deep_sessions) as deep_sessions,
         IF(d.dt IS NOT NULL, d.recharge_payers, i.recharge_payers) as recharge_payers,
         IF(d.dt IS NOT NULL, d.revenue, i.revenue) as revenue,
         IF(d.dt IS NOT NULL, d.gift_users, i.gift_users) as gift_users
       FROM daily_d d
       FULL OUTER JOIN daily_i i ON d.dt = i.dt
     ),
+    activation AS (
+      SELECT dt, COUNT(DISTINCT user_pseudo_id) as activated_users
+      FROM (
+        SELECT PARSE_DATE('%Y%m%d', event_date) as dt, user_pseudo_id
+        FROM \`${dataset()}.${table()}\`
+        WHERE ${tableFilter(days)}${extra}
+          AND event_name IN ('guide_energy_show', 'message_send')
+        GROUP BY 1, 2
+        HAVING COUNTIF(event_name = 'guide_energy_show') > 0
+          AND COUNTIF(event_name = 'message_send') > 0
+      )
+      GROUP BY 1
+    ),
+    engagement AS (
+      SELECT DISTINCT
+        PARSE_DATE('%Y%m%d', event_date) as dt,
+        user_pseudo_id,
+        ${paramInt('ga_session_id')} as session_id,
+        event_timestamp,
+        ${paramInt('engagement_time_msec')} as engagement_ms
+      FROM \`${dataset()}.${table()}\`
+      WHERE ${tableFilter(days)}${extra}
+        AND event_name = 'user_engagement'
+    ),
+    session_dur AS (
+      SELECT dt, AVG(session_total_ms / 1000.0) as avg_session_duration
+      FROM (
+        SELECT dt, user_pseudo_id, session_id, SUM(engagement_ms) as session_total_ms
+        FROM engagement
+        GROUP BY 1, 2, 3
+      )
+      GROUP BY 1
+    ),
     d1_base AS (
       SELECT user_pseudo_id, MIN(PARSE_DATE('%Y%m%d', event_date)) as first_dt
       FROM \`${dataset()}.${table()}\`
       WHERE ${tableSuffixSince(days + 7)}
         AND PARSE_DATE('%Y%m%d', event_date) >= DATE_SUB(CURRENT_DATE(), INTERVAL ${days + 7} DAY)
-        AND event_name = 'message_send'${extra}
+        AND event_name NOT IN ('notification_receive','notification_dismiss','app_remove')${extra}
       GROUP BY 1
     ),
     d1_cohort AS (
@@ -205,13 +239,18 @@ export function getKPIAndWowQuery(mode: "today" | "7d" | "30d", filters?: Overvi
       GROUP BY 1
     )
     SELECT
-      d.date_str, d.dt, d.dau, d.new_users, d.chatters,
+      d.date_str, d.dt, d.dau, d.new_users, d.guide_users, d.chatters,
       d.total_messages, d.disposed_sessions, d.total_sessions,
-      d.avg_msgs_per_session, d.avg_session_duration,
+      d.valid_sessions, d.deep_sessions,
+      SAFE_DIVIDE(d.total_messages, d.chatters) as avg_msgs_per_session,
+      sd.avg_session_duration,
+      a.activated_users,
       d.recharge_payers, d.revenue, d.gift_users,
       c.cohort_size as d1_cohort_size,
       c.retained_d1
     FROM daily d
+    LEFT JOIN activation a ON d.dt = a.dt
+    LEFT JOIN session_dur sd ON d.dt = sd.dt
     LEFT JOIN d1_cohort c ON c.return_date = d.date_str
     ORDER BY d.dt DESC
   `;
@@ -231,14 +270,14 @@ export function getDailyTrendQuery(days: number = 7, filters?: OverviewFilters) 
         COUNT(DISTINCT user_pseudo_id) as dau,
         COUNT(DISTINCT CASE WHEN event_name = 'guide_energy_show'
           AND ${paramStr('user_status')} = 'new' THEN user_pseudo_id END) as new_users,
+        COUNT(DISTINCT CASE WHEN event_name = 'guide_energy_show'
+          THEN user_pseudo_id END) as guide_users,
         COUNT(DISTINCT CASE WHEN event_name = 'message_send' THEN user_pseudo_id END) as chatters,
         COUNT(CASE WHEN event_name = 'message_send' THEN 1 END) as total_messages,
         COUNT(CASE WHEN event_name = 'chat_entry_click' THEN 1 END) as sessions,
         COUNT(CASE WHEN event_name = 'chat_session_dispose' THEN 1 END) as disposed_sessions,
-        AVG(CASE WHEN event_name = 'chat_session_dispose'
-          THEN ${paramInt('message_count')} END) as avg_msgs_per_session,
-        AVG(CASE WHEN event_name = 'chat_session_dispose'
-          THEN ${paramInt('session_duration')} END) as avg_session_duration_sec,
+        COUNTIF(event_name = 'chat_session_dispose' AND ${paramInt('message_count')} >= 1) as valid_sessions,
+        COUNTIF(event_name = 'chat_session_dispose' AND ${paramInt('message_count')} >= 10) as deep_sessions,
         COALESCE(SUM(CASE WHEN event_name IN ('recharge_result','membership_success_toast')
           THEN event_value_in_usd END), 0) as revenue,
         COUNT(DISTINCT CASE WHEN event_name = 'gift_item_purchase' THEN user_pseudo_id END) as gift_users
@@ -253,14 +292,14 @@ export function getDailyTrendQuery(days: number = 7, filters?: OverviewFilters) 
         COUNT(DISTINCT user_pseudo_id) as dau,
         COUNT(DISTINCT CASE WHEN event_name = 'guide_energy_show'
           AND ${paramStr('user_status')} = 'new' THEN user_pseudo_id END) as new_users,
+        COUNT(DISTINCT CASE WHEN event_name = 'guide_energy_show'
+          THEN user_pseudo_id END) as guide_users,
         COUNT(DISTINCT CASE WHEN event_name = 'message_send' THEN user_pseudo_id END) as chatters,
         COUNT(CASE WHEN event_name = 'message_send' THEN 1 END) as total_messages,
         COUNT(CASE WHEN event_name = 'chat_entry_click' THEN 1 END) as sessions,
         COUNT(CASE WHEN event_name = 'chat_session_dispose' THEN 1 END) as disposed_sessions,
-        AVG(CASE WHEN event_name = 'chat_session_dispose'
-          THEN ${paramInt('message_count')} END) as avg_msgs_per_session,
-        AVG(CASE WHEN event_name = 'chat_session_dispose'
-          THEN ${paramInt('session_duration')} END) as avg_session_duration_sec,
+        COUNTIF(event_name = 'chat_session_dispose' AND ${paramInt('message_count')} >= 1) as valid_sessions,
+        COUNTIF(event_name = 'chat_session_dispose' AND ${paramInt('message_count')} >= 10) as deep_sessions,
         COALESCE(SUM(CASE WHEN event_name IN ('recharge_result','membership_success_toast')
           THEN event_value_in_usd END), 0) as revenue,
         COUNT(DISTINCT CASE WHEN event_name = 'gift_item_purchase' THEN user_pseudo_id END) as gift_users
@@ -268,21 +307,96 @@ export function getDailyTrendQuery(days: number = 7, filters?: OverviewFilters) 
       WHERE ${tableFilterIntradayOnly(days)}${extra}
       GROUP BY 1, 2
     )
+    daily AS (
+      SELECT
+        COALESCE(d.date, i.date) as date,
+        COALESCE(d.dt, i.dt) as dt,
+        IF(d.dt IS NOT NULL, d.dau, i.dau) as dau,
+        IF(d.dt IS NOT NULL, d.new_users, i.new_users) as new_users,
+        IF(d.dt IS NOT NULL, d.guide_users, i.guide_users) as guide_users,
+        IF(d.dt IS NOT NULL, d.chatters, i.chatters) as chatters,
+        IF(d.dt IS NOT NULL, d.total_messages, i.total_messages) as total_messages,
+        IF(d.dt IS NOT NULL, d.sessions, i.sessions) as sessions,
+        IF(d.dt IS NOT NULL, d.disposed_sessions, i.disposed_sessions) as disposed_sessions,
+        IF(d.dt IS NOT NULL, d.valid_sessions, i.valid_sessions) as valid_sessions,
+        IF(d.dt IS NOT NULL, d.deep_sessions, i.deep_sessions) as deep_sessions,
+        IF(d.dt IS NOT NULL, d.revenue, i.revenue) as revenue,
+        IF(d.dt IS NOT NULL, d.gift_users, i.gift_users) as gift_users
+      FROM daily_d d
+      FULL OUTER JOIN daily_i i ON d.dt = i.dt
+    ),
+    activation AS (
+      SELECT dt, COUNT(DISTINCT user_pseudo_id) as activated_users
+      FROM (
+        SELECT PARSE_DATE('%Y%m%d', event_date) as dt, user_pseudo_id
+        FROM \`${dataset()}.${table()}\`
+        WHERE ${tableFilter(days)}${extra}
+          AND event_name IN ('guide_energy_show', 'message_send')
+        GROUP BY 1, 2
+        HAVING COUNTIF(event_name = 'guide_energy_show') > 0
+          AND COUNTIF(event_name = 'message_send') > 0
+      )
+      GROUP BY 1
+    ),
+    engagement AS (
+      SELECT DISTINCT
+        PARSE_DATE('%Y%m%d', event_date) as dt,
+        user_pseudo_id,
+        ${paramInt('ga_session_id')} as session_id,
+        event_timestamp,
+        ${paramInt('engagement_time_msec')} as engagement_ms
+      FROM \`${dataset()}.${table()}\`
+      WHERE ${tableFilter(days)}${extra}
+        AND event_name = 'user_engagement'
+    ),
+    session_dur AS (
+      SELECT dt, AVG(session_total_ms / 1000.0) as avg_session_duration_sec
+      FROM (
+        SELECT dt, user_pseudo_id, session_id, SUM(engagement_ms) as session_total_ms
+        FROM engagement
+        GROUP BY 1, 2, 3
+      )
+      GROUP BY 1
+    ),
+    d1_base AS (
+      SELECT user_pseudo_id, MIN(PARSE_DATE('%Y%m%d', event_date)) as first_dt
+      FROM \`${dataset()}.${table()}\`
+      WHERE ${tableSuffixSince(days + 7)}
+        AND PARSE_DATE('%Y%m%d', event_date) >= DATE_SUB(CURRENT_DATE(), INTERVAL ${days + 7} DAY)
+        AND event_name NOT IN ('notification_receive','notification_dismiss','app_remove')${extra}
+      GROUP BY 1
+    ),
+    d1_cohort AS (
+      SELECT
+        FORMAT_DATE('%Y-%m-%d', DATE_ADD(r.first_dt, INTERVAL 1 DAY)) as return_date,
+        COUNT(DISTINCT r.user_pseudo_id) as cohort_size,
+        COUNT(DISTINCT CASE WHEN b.user_pseudo_id IS NOT NULL THEN r.user_pseudo_id END) as retained_d1
+      FROM d1_base r
+      LEFT JOIN \`${dataset()}.${table()}\` b
+        ON r.user_pseudo_id = b.user_pseudo_id
+        AND PARSE_DATE('%Y%m%d', b.event_date) = DATE_ADD(r.first_dt, INTERVAL 1 DAY)
+        AND ${tableSuffixSince(days + 7)}
+        AND b.event_name NOT IN ('notification_receive','notification_dismiss','app_remove')${extra}
+      GROUP BY 1
+    )
     SELECT
-      COALESCE(d.date, i.date) as date,
-      IF(d.dt IS NOT NULL, d.dau, i.dau) as dau,
-      IF(d.dt IS NOT NULL, d.new_users, i.new_users) as new_users,
-      IF(d.dt IS NOT NULL, d.chatters, i.chatters) as chatters,
-      IF(d.dt IS NOT NULL, d.total_messages, i.total_messages) as total_messages,
-      IF(d.dt IS NOT NULL, d.sessions, i.sessions) as sessions,
-      IF(d.dt IS NOT NULL, d.disposed_sessions, i.disposed_sessions) as disposed_sessions,
-      IF(d.dt IS NOT NULL, d.avg_msgs_per_session, i.avg_msgs_per_session) as avg_msgs_per_session,
-      IF(d.dt IS NOT NULL, d.avg_session_duration_sec, i.avg_session_duration_sec) as avg_session_duration_sec,
-      IF(d.dt IS NOT NULL, d.revenue, i.revenue) as revenue,
-      IF(d.dt IS NOT NULL, d.gift_users, i.gift_users) as gift_users
-    FROM daily_d d
-    FULL OUTER JOIN daily_i i ON d.dt = i.dt
-    ORDER BY COALESCE(d.dt, i.dt) ASC
+      dy.date, dy.dau, dy.new_users, dy.guide_users, dy.chatters,
+      dy.total_messages, dy.sessions, dy.disposed_sessions,
+      dy.valid_sessions, dy.deep_sessions,
+      SAFE_DIVIDE(dy.total_messages, dy.chatters) as avg_msgs_per_session,
+      sd.avg_session_duration_sec,
+      a.activated_users,
+      SAFE_DIVIDE(a.activated_users, NULLIF(dy.guide_users, 0)) as activation_rate,
+      SAFE_DIVIDE(dy.disposed_sessions, NULLIF(dy.sessions, 0)) as dispose_rate,
+      dy.revenue, dy.gift_users,
+      c.cohort_size as d1_cohort_size,
+      c.retained_d1,
+      SAFE_DIVIDE(c.retained_d1, NULLIF(c.cohort_size, 0)) as d1_retention_rate
+    FROM daily dy
+    LEFT JOIN activation a ON dy.dt = a.dt
+    LEFT JOIN session_dur sd ON dy.dt = sd.dt
+    LEFT JOIN d1_cohort c ON c.return_date = dy.date
+    ORDER BY dy.dt ASC
   `;
 }
 
@@ -332,25 +446,65 @@ export function getSessionQualityQuery(days: number = 30) {
         user_pseudo_id,
         ${paramStr('virtual_id')} as virtual_id,
         ${paramInt('message_count')} as message_count,
-        ${paramInt('session_duration')} as session_duration,
         ${paramStr('trigger_type')} as trigger_type
       FROM \`${dataset()}.${table()}\`
       WHERE ${tableFilter(days)}
         AND event_name = 'chat_session_dispose'
+    ),
+    disposed_agg AS (
+      SELECT
+        COUNT(*) as total_sessions,
+        COUNTIF(message_count >= 10) as deep_sessions,
+        COUNTIF(message_count < 3) as shallow_sessions,
+        COUNTIF(message_count >= 1) as valid_sessions,
+        APPROX_QUANTILES(message_count, 100)[OFFSET(50)] as median_messages,
+        COUNTIF(trigger_type = 'swipe') as dispose_swipe,
+        COUNTIF(trigger_type = 'popup') as dispose_popup
+      FROM disposed
+    ),
+    msg_stats AS (
+      SELECT
+        COUNT(*) as total_msg_sends,
+        COUNT(DISTINCT user_pseudo_id) as chatters
+      FROM \`${dataset()}.${table()}\`
+      WHERE ${tableFilter(days)}
+        AND event_name = 'message_send'
+    ),
+    engagement AS (
+      SELECT DISTINCT
+        user_pseudo_id,
+        ${paramInt('ga_session_id')} as session_id,
+        event_timestamp,
+        ${paramInt('engagement_time_msec')} as engagement_ms
+      FROM \`${dataset()}.${table()}\`
+      WHERE ${tableFilter(days)}
+        AND event_name = 'user_engagement'
+    ),
+    session_dur AS (
+      SELECT
+        AVG(session_total_ms / 1000.0) as avg_duration_sec,
+        APPROX_QUANTILES(CAST(session_total_ms / 1000.0 AS INT64), 100)[OFFSET(50)] as median_duration_sec
+      FROM (
+        SELECT user_pseudo_id, session_id, SUM(engagement_ms) as session_total_ms
+        FROM engagement
+        GROUP BY 1, 2
+      )
     )
     SELECT
-      COUNT(*) as total_sessions,
-      AVG(message_count) as avg_messages,
-      AVG(session_duration) as avg_duration_sec,
-      COUNTIF(message_count >= 10) as deep_sessions,
-      COUNTIF(message_count >= 10) / NULLIF(COUNT(*), 0) as deep_conversation_rate,
-      COUNTIF(message_count < 3) as shallow_sessions,
-      COUNTIF(message_count < 3) / NULLIF(COUNT(*), 0) as shallow_rate,
-      APPROX_QUANTILES(message_count, 100)[OFFSET(50)] as median_messages,
-      APPROX_QUANTILES(session_duration, 100)[OFFSET(50)] as median_duration_sec,
-      COUNTIF(trigger_type = 'swipe') as dispose_swipe,
-      COUNTIF(trigger_type = 'popup') as dispose_popup
-    FROM disposed
+      da.total_sessions,
+      SAFE_DIVIDE(m.total_msg_sends, m.chatters) as avg_messages,
+      sd.avg_duration_sec,
+      da.deep_sessions,
+      SAFE_DIVIDE(da.deep_sessions, NULLIF(da.total_sessions, 0)) as deep_conversation_rate,
+      da.shallow_sessions,
+      SAFE_DIVIDE(da.shallow_sessions, NULLIF(da.total_sessions, 0)) as shallow_rate,
+      da.valid_sessions,
+      SAFE_DIVIDE(da.valid_sessions, NULLIF(da.total_sessions, 0)) as valid_session_rate,
+      da.median_messages,
+      sd.median_duration_sec,
+      da.dispose_swipe,
+      da.dispose_popup
+    FROM disposed_agg da, msg_stats m, session_dur sd
   `;
 }
 
@@ -393,11 +547,21 @@ export function getMessageDistributionQuery(days: number = 30) {
 
 export function getDurationDistributionQuery(days: number = 30) {
   return `
-    WITH disposed AS (
-      SELECT ${paramInt('session_duration')} as dur_sec
+    WITH engagement AS (
+      SELECT DISTINCT
+        user_pseudo_id,
+        ${paramInt('ga_session_id')} as session_id,
+        event_timestamp,
+        ${paramInt('engagement_time_msec')} as engagement_ms
       FROM \`${dataset()}.${table()}\`
       WHERE ${tableFilter(days)}
-        AND event_name = 'chat_session_dispose'
+        AND event_name = 'user_engagement'
+    ),
+    sessions AS (
+      SELECT user_pseudo_id, session_id,
+        SUM(engagement_ms) / 1000.0 as dur_sec
+      FROM engagement
+      GROUP BY 1, 2
     ),
     bucketed AS (
       SELECT
@@ -419,7 +583,7 @@ export function getDurationDistributionQuery(days: number = 30) {
           WHEN dur_sec < 1800 THEN 5
           ELSE 6
         END as sort_key
-      FROM disposed
+      FROM sessions
     )
     SELECT bucket, COUNT(*) as session_count, sort_key
     FROM bucketed
@@ -492,7 +656,7 @@ export function getRetentionQuery(days: number = 30) {
       FROM \`${dataset()}.${table()}\`
       WHERE ${tableSuffixSince(lookback)}
         AND PARSE_DATE('%Y%m%d', event_date) >= DATE_SUB(CURRENT_DATE(), INTERVAL ${lookback} DAY)
-        AND event_name = 'message_send'
+        AND event_name NOT IN ('notification_receive','notification_dismiss','app_remove')
       GROUP BY 1
     ),
     cohort AS (
@@ -802,14 +966,26 @@ export function getTopEventsQuery(days: number = 30, limit: number = 20) {
 
 export function getHealthDashboardQuery(days: number = 30) {
   return `
-    WITH metrics AS (
+    WITH activated AS (
+      SELECT COUNT(DISTINCT user_pseudo_id) as activated_users
+      FROM (
+        SELECT user_pseudo_id
+        FROM \`${dataset()}.${table()}\`
+        WHERE ${tableFilter(days)}
+          AND event_name IN ('guide_energy_show', 'message_send')
+        GROUP BY user_pseudo_id
+        HAVING COUNTIF(event_name = 'guide_energy_show') > 0
+          AND COUNTIF(event_name = 'message_send') > 0
+      )
+    ),
+    guide AS (
+      SELECT COUNT(DISTINCT user_pseudo_id) as guide_users
+      FROM \`${dataset()}.${table()}\`
+      WHERE ${tableFilter(days)}
+        AND event_name = 'guide_energy_show'
+    ),
+    metrics AS (
       SELECT
-        -- Activation
-        SAFE_DIVIDE(
-          COUNT(DISTINCT CASE WHEN event_name = 'message_send' THEN user_pseudo_id END),
-          NULLIF(COUNT(DISTINCT CASE WHEN event_name = 'guide_energy_show'
-            AND ${paramStr('user_status')} = 'new' THEN user_pseudo_id END), 0)
-        ) as activation_rate,
         -- Chat engagement
         SAFE_DIVIDE(
           COUNT(DISTINCT CASE WHEN event_name = 'message_send' THEN user_pseudo_id END),
@@ -853,7 +1029,10 @@ export function getHealthDashboardQuery(days: number = 30) {
       FROM \`${dataset()}.${table()}\`
       WHERE ${tableFilter(days)}
     )
-    SELECT * FROM metrics
+    SELECT
+      SAFE_DIVIDE(a.activated_users, NULLIF(g.guide_users, 0)) as activation_rate,
+      m.*
+    FROM metrics m, activated a, guide g
   `;
 }
 

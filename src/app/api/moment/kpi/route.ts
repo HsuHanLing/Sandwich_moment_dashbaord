@@ -22,7 +22,6 @@ export async function GET(request: Request) {
     const prev = data.length >= 8 ? data[7] : data[data.length - 1];
 
     const dau = n(latest.dau);
-    const chatters = n(latest.chatters);
     const totalSessions = n(latest.total_sessions);
     const sessionsPerUser = dau > 0 ? Math.round((totalSessions / dau) * 100) / 100 : 0;
     const avgMsgs = Math.round(n(latest.avg_msgs_per_session) * 10) / 10;
@@ -30,8 +29,10 @@ export async function GET(request: Request) {
     const disposeRate = totalSessions > 0
       ? Math.round((n(latest.disposed_sessions) / totalSessions) * 1000) / 10
       : 0;
-    const activationRate = n(latest.new_users) > 0
-      ? Math.round((chatters / n(latest.new_users)) * 1000) / 10
+    const guideUsers = n(latest.guide_users);
+    const activatedUsers = n(latest.activated_users);
+    const activationRate = guideUsers > 0
+      ? Math.round((activatedUsers / guideUsers) * 1000) / 10
       : 0;
     const revenue = n(latest.revenue);
     const arpu = dau > 0 ? Math.round((revenue / dau) * 100) / 100 : 0;
@@ -40,7 +41,6 @@ export async function GET(request: Request) {
     const d1Retention = d1Cohort > 0 ? Math.round((d1Retained / d1Cohort) * 1000) / 10 : 0;
 
     const prevDau = n(prev.dau);
-    const prevChatters = n(prev.chatters);
     const prevSessions = n(prev.total_sessions);
     const prevSessionsPerUser = prevDau > 0 ? Math.round((prevSessions / prevDau) * 100) / 100 : 0;
     const prevAvgMsgs = Math.round(n(prev.avg_msgs_per_session) * 10) / 10;
@@ -50,11 +50,15 @@ export async function GET(request: Request) {
     const prevD1Cohort = n(prev.d1_cohort_size);
     const prevD1Retained = n(prev.retained_d1);
     const prevD1Retention = prevD1Cohort > 0 ? Math.round((prevD1Retained / prevD1Cohort) * 1000) / 10 : 0;
+    const prevGuideUsers = n(prev.guide_users);
+    const prevActivatedUsers = n(prev.activated_users);
+    const prevActivationRate = prevGuideUsers > 0
+      ? Math.round((prevActivatedUsers / prevGuideUsers) * 1000) / 10 : 0;
 
     return NextResponse.json({
       data_range_start: data[data.length - 1]?.date_str || "",
       data_range_end: latest.date_str || "",
-      dau, new_users: n(latest.new_users), chatters,
+      dau, new_users: n(latest.new_users), chatters: n(latest.chatters),
       sessions_per_user: sessionsPerUser,
       avg_msgs_per_session: avgMsgs,
       avg_session_duration: avgDuration,
@@ -63,6 +67,8 @@ export async function GET(request: Request) {
       revenue, arpu,
       d1_retention: d1Retention,
       gift_users: n(latest.gift_users),
+      valid_sessions: n(latest.valid_sessions),
+      deep_sessions: n(latest.deep_sessions),
       wow_dau: prevDau,
       wow_sessions_per_user: prevSessionsPerUser,
       wow_avg_msgs: prevAvgMsgs,
@@ -70,8 +76,7 @@ export async function GET(request: Request) {
       wow_revenue: prevRevenue,
       wow_arpu: prevArpu,
       wow_d1_retention: prevD1Retention,
-      wow_activation_rate: prevChatters > 0 && n(prev.new_users) > 0
-        ? Math.round((prevChatters / n(prev.new_users)) * 1000) / 10 : 0,
+      wow_activation_rate: prevActivationRate,
     });
   } catch (error) {
     console.error("KPI query error:", error);

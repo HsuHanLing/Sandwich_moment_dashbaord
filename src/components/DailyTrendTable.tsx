@@ -1,5 +1,7 @@
 "use client";
 
+import { MetricInfoTooltip } from "@/components/MetricInfoTooltip";
+
 type DailyRow = {
   date: string;
   dau: number;
@@ -10,9 +12,25 @@ type DailyRow = {
   disposed_sessions: number;
   avg_msgs_per_session: number;
   avg_session_duration_sec: number;
+  activation_rate: number;
+  dispose_rate: number;
   revenue: number;
   gift_users: number;
+  d1_retention_rate: number;
+  [key: string]: unknown;
 };
+
+function TH({ children, metricKey }: { children: React.ReactNode; metricKey?: string }) {
+  const inner = (
+    <th className="px-3 py-2 font-medium text-right whitespace-nowrap">{children}</th>
+  );
+  if (!metricKey) return inner;
+  return (
+    <th className="px-3 py-2 font-medium text-right whitespace-nowrap">
+      <MetricInfoTooltip metricKey={metricKey}>{children}</MetricInfoTooltip>
+    </th>
+  );
+}
 
 export function DailyTrendTable({ data }: { data: DailyRow[] }) {
   if (!data.length) return null;
@@ -23,16 +41,18 @@ export function DailyTrendTable({ data }: { data: DailyRow[] }) {
         <thead>
           <tr className="border-b border-[var(--border)] text-left text-[var(--secondary-text)]">
             <th className="px-3 py-2 font-medium">Date</th>
-            <th className="px-3 py-2 font-medium text-right">DAU</th>
-            <th className="px-3 py-2 font-medium text-right">New</th>
-            <th className="px-3 py-2 font-medium text-right">Chatters</th>
-            <th className="px-3 py-2 font-medium text-right">Messages</th>
-            <th className="px-3 py-2 font-medium text-right">Sessions</th>
-            <th className="px-3 py-2 font-medium text-right">Disposed</th>
-            <th className="px-3 py-2 font-medium text-right">Avg Msgs</th>
-            <th className="px-3 py-2 font-medium text-right">Avg Dur(s)</th>
-            <th className="px-3 py-2 font-medium text-right">Revenue</th>
-            <th className="px-3 py-2 font-medium text-right">Gift Users</th>
+            <TH metricKey="DAU">DAU</TH>
+            <TH metricKey="NEW_USERS">New</TH>
+            <TH>Chatters</TH>
+            <TH metricKey="AVG_MSGS_PER_SESSION">Messages</TH>
+            <TH metricKey="SESSIONS_PER_USER">Sessions</TH>
+            <TH metricKey="DISPOSE_RATE">Disposed</TH>
+            <TH metricKey="AVG_MSGS_PER_SESSION">Avg Msgs</TH>
+            <TH metricKey="AVG_SESSION_DURATION">Avg Dur(s)</TH>
+            <TH metricKey="ACTIVATION_RATE">Act %</TH>
+            <TH metricKey="DISPOSE_RATE">Disp %</TH>
+            <TH metricKey="D1_RETENTION_DAILY">D1 Ret %</TH>
+            <TH metricKey="REVENUE">Revenue</TH>
           </tr>
         </thead>
         <tbody>
@@ -47,8 +67,12 @@ export function DailyTrendTable({ data }: { data: DailyRow[] }) {
               <td className="px-3 py-2 text-right">{r.disposed_sessions.toLocaleString()}</td>
               <td className="px-3 py-2 text-right">{r.avg_msgs_per_session}</td>
               <td className="px-3 py-2 text-right">{r.avg_session_duration_sec}</td>
+              <td className="px-3 py-2 text-right">{r.activation_rate}%</td>
+              <td className="px-3 py-2 text-right">{r.dispose_rate}%</td>
+              <td className="px-3 py-2 text-right font-medium text-[var(--accent)]">
+                {r.d1_retention_rate > 0 ? `${r.d1_retention_rate}%` : "—"}
+              </td>
               <td className="px-3 py-2 text-right">${r.revenue.toLocaleString()}</td>
-              <td className="px-3 py-2 text-right">{r.gift_users.toLocaleString()}</td>
             </tr>
           ))}
         </tbody>

@@ -55,14 +55,23 @@ type DailyRow = {
   date: string;
   dau: number;
   new_users: number;
+  guide_users: number;
   chatters: number;
   total_messages: number;
   sessions: number;
   disposed_sessions: number;
+  valid_sessions: number;
+  deep_sessions: number;
   avg_msgs_per_session: number;
   avg_session_duration_sec: number;
+  activated_users: number;
+  activation_rate: number;
+  dispose_rate: number;
   revenue: number;
   gift_users: number;
+  d1_cohort_size: number;
+  retained_d1: number;
+  d1_retention_rate: number;
 };
 
 export default function DashboardPage() {

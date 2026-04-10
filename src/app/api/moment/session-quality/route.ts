@@ -24,6 +24,8 @@ export async function GET(request: Request) {
         shallow_rate: Math.round(n(s.shallow_rate) * 1000) / 10,
         deep_sessions: n(s.deep_sessions),
         shallow_sessions: n(s.shallow_sessions),
+        valid_sessions: n(s.valid_sessions),
+        valid_session_rate: Math.round(n(s.valid_session_rate) * 1000) / 10,
         median_messages: n(s.median_messages),
         median_duration_sec: n(s.median_duration_sec),
         dispose_swipe: n(s.dispose_swipe),
