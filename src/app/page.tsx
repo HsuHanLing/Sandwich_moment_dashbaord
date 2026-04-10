@@ -212,6 +212,7 @@ export default function DashboardPage() {
   }
 
   const todayStr = new Date().toISOString().split("T")[0];
+  const tStr = t as (key: string) => string;
   const tabs = ["overview", "activation", "sessions", "behaviour", "retention", "monetisation"] as const;
 
   return (
@@ -341,7 +342,7 @@ export default function DashboardPage() {
             </section>
 
             {/* Health Dashboard */}
-            {healthData && <HealthDashboard data={healthData} t={t} />}
+            {healthData && <HealthDashboard data={healthData} t={tStr} />}
 
             {/* Top Events */}
             {topEvents.length > 0 && (
@@ -424,12 +425,12 @@ export default function DashboardPage() {
 
         {/* ═══ Tab 3: Session Quality ═══ */}
         {activeTab === "sessions" && (
-          <SessionQualitySection data={sessionData} loading={analyticsLoading} t={t} />
+          <SessionQualitySection data={sessionData} loading={analyticsLoading} t={tStr} />
         )}
 
         {/* ═══ Tab 4: Behaviour ═══ */}
         {activeTab === "behaviour" && (
-          <BehaviourSection data={behaviourData} loading={analyticsLoading} t={t} />
+          <BehaviourSection data={behaviourData} loading={analyticsLoading} t={tStr} />
         )}
 
         {/* ═══ Tab 5: Retention ═══ */}
@@ -483,7 +484,7 @@ export default function DashboardPage() {
             data={monetisationData}
             economyData={economyData}
             loading={analyticsLoading}
-            t={t}
+            t={tStr}
           />
         )}
       </main>

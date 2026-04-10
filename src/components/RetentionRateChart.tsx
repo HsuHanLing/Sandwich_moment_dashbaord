@@ -17,10 +17,14 @@ export function RetentionRateChart({ chart }: { chart: RetentionRow[]; cohortTyp
             <YAxis unit="%" tick={{ fontSize: 10, fill: "var(--secondary-text)" }} domain={[0, 100]} />
             <Tooltip
               contentStyle={{ fontSize: 11, backgroundColor: "var(--card-bg)", border: "1px solid var(--border)" }}
-              formatter={(value: number, name: string, props: { payload: RetentionRow }) => [
-                `${value}% (${props.payload.retained.toLocaleString()} / ${props.payload.cohort_size.toLocaleString()})`,
-                "Retention",
-              ]}
+              formatter={(value, _name, item) => {
+                const payload = item?.payload as RetentionRow | undefined;
+                const v = Number(value ?? 0);
+                const detail = payload
+                  ? `${v}% (${payload.retained.toLocaleString()} / ${payload.cohort_size.toLocaleString()})`
+                  : `${v}%`;
+                return [detail, "Retention"];
+              }}
             />
             <Bar dataKey="rate" radius={[4, 4, 0, 0]}>
               {chart.map((entry, idx) => (

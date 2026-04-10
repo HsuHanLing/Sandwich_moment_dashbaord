@@ -1,8 +1,6 @@
 "use client";
 
 import { PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip } from "recharts";
-import { useLocale } from "@/contexts/LocaleContext";
-import { REGION_NAMES_EN } from "@/lib/region-names";
 
 type GeoItem = { region: string; region_name: string; users: number; share: number };
 
@@ -14,9 +12,7 @@ function formatPct(n: number) {
 const COLORS = ["#4285f4", "#ea4335", "#fbbc04", "#34a853", "#8ab4f8", "#f28b82", "#fdd663", "#81c995"];
 
 export function GeoDistributionChart({ data }: { data: GeoItem[] }) {
-  const { locale } = useLocale();
-  const getRegionLabel = (row: GeoItem) =>
-    locale === "en" ? REGION_NAMES_EN[row.region] ?? row.region : row.region_name;
+  const getRegionLabel = (row: GeoItem) => row.region_name || row.region;
   const chartData = data.map((d) => ({ name: getRegionLabel(d), value: d.users }));
 
   return (

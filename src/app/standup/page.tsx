@@ -3,15 +3,13 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useLocale } from "@/contexts/LocaleContext";
-import { FlywheelSection } from "@/components/FlywheelSection";
 
 /* ── Types ── */
 
-type FlywheelData = {
-  nodes: { id: string; name: string; nameCn: string; metrics: Record<string, number>; status: "healthy" | "warning" | "broken"; score: number; conversion: number | null; benchmark: string }[];
-  overallScore: number;
-  summary: Record<string, number>;
-  days: number;
+type MomentHealthSnapshot = {
+  indicators: { id: string; label: string; value: number; unit: string; status: string }[];
+  revenue: number;
+  dau_avg: number;
 };
 
 type ActionItem = {
@@ -312,7 +310,7 @@ export default function StandupPage() {
   const { t } = useLocale();
   const [date, setDate] = useState(todayStr);
   const [record, setRecord] = useState<StandupRecord | null>(null);
-  const [flywheelData, setFlywheelData] = useState<FlywheelData>({ nodes: [], overallScore: 0, summary: {}, days: 7 });
+  const [momentHealth, setMomentHealth] = useState<MomentHealthSnapshot | null>(null);
   const [actionInput, setActionInput] = useState("");
   const [planInput, setPlanInput] = useState("");
   const [loading, setLoading] = useState(true);
@@ -327,12 +325,12 @@ export default function StandupPage() {
     fetch("/api/auth/status").then(r => r.json()).then(d => setAuthEnabled(d.enabled)).catch(() => {});
   }, []);
 
-  // Load flywheel funnel data (past 7 days)
+  // Product snapshot from Moment dashboard (past 7 days)
   useEffect(() => {
-    fetch("/api/marketing/flywheel?days=7")
+    fetch("/api/moment/health-dashboard?days=7")
       .then((r) => r.json())
-      .then((d) => {
-        if (d && !d.error) setFlywheelData({ nodes: d.nodes ?? [], overallScore: d.overallScore ?? 0, summary: d.summary ?? {}, days: 7 });
+      .then((d: MomentHealthSnapshot) => {
+        if (d?.indicators) setMomentHealth(d);
       })
       .catch(() => {});
   }, []);
@@ -602,16 +600,38 @@ export default function StandupPage() {
           </div>
         ) : (
           <div className="space-y-5">
-            {/* 1. Flywheel Funnel (past 7 days) */}
-            <div className="mb-6">
-              <FlywheelSection
-                nodes={flywheelData.nodes}
-                overallScore={flywheelData.overallScore}
-                summary={flywheelData.summary}
-                days={flywheelData.days}
-                t={t as (key: string) => string}
-              />
-            </div>
+            {/* 1. Product snapshot (Moment metrics, past 7 days) */}
+            <section className="mb-6 overflow-hidden rounded-2xl bg-[var(--card-bg)] p-5 sm:p-6" style={cardStyle}>
+              <h3 className="mb-4 flex items-center gap-3 text-[15px] font-semibold tracking-tight text-[var(--foreground)]">
+                Product snapshot (7d)
+              </h3>
+              {momentHealth ? (
+                <div className="space-y-4">
+                  <p className="text-[12px] text-[var(--secondary-text)]">
+                    Avg DAU: <span className="font-medium text-[var(--foreground)]">{momentHealth.dau_avg?.toLocaleString() ?? "—"}</span>
+                    {" · "}
+                    Revenue: <span className="font-medium text-[var(--foreground)]">${momentHealth.revenue?.toLocaleString() ?? "0"}</span>
+                  </p>
+                  <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                    {momentHealth.indicators.slice(0, 8).map((ind) => (
+                      <div
+                        key={ind.id}
+                        className="rounded-xl px-3 py-2.5 text-[12px]"
+                        style={{ border: "1px solid var(--border)", backgroundColor: "var(--background)" }}
+                      >
+                        <div className="text-[10px] font-medium text-[var(--secondary-text)]">{ind.label}</div>
+                        <div className="mt-0.5 font-semibold tabular-nums text-[var(--foreground)]">
+                          {ind.value}
+                          {ind.unit}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <p className="text-[12px] text-[var(--secondary-text)]">Loading metrics…</p>
+              )}
+            </section>
 
             {/* 2. Core Problems */}
             <section className="overflow-hidden rounded-2xl bg-[var(--card-bg)] p-5 sm:p-6" style={cardStyle}>
