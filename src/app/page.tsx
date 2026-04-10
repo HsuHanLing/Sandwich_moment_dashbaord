@@ -2,113 +2,67 @@
 
 import { useEffect, useState, useRef, useCallback } from "react";
 import { KPICard } from "@/components/KPICard";
-import {
-  DailyTrendChartLazy as DailyTrendChart,
-  DailyTrendTableLazy as DailyTrendTable,
-  UserAttributesChartLazy as UserAttributesChart,
-  GeoDistributionChartLazy as GeoDistributionChart,
-  CreatorSupplyChartLazy as CreatorSupplyChart,
-  GrowthFunnelChartLazy as GrowthFunnelChart,
-  RetentionRateChartLazy as RetentionRateChart,
-  MonetizationChartLazy as MonetizationChart,
-  EconomyHealthChartLazy as EconomyHealthChart,
-  ContentFeedChartLazy as ContentFeedChart,
-  UnlockInsightsSectionLazy as UnlockInsightsSection,
-  PaidUsersSectionLazy as PaidUsersSection,
-  SubscriptionAnalysisSectionLazy as SubscriptionAnalysisSection,
-  ScratchRewardWithdrawSectionLazy as ScratchRewardWithdrawSection,
-} from "@/components/lazy-dashboard-charts";
-import type { CreatorSupplyData } from "@/components/CreatorSupplyChart";
-import type { ContentFeedData } from "@/components/ContentFeedChart";
-import { AIChatWidget } from "@/components/AIChatWidget";
-import type { DashboardContext } from "@/components/AIChatWidget";
-import { UserAcquisitionSection } from "@/components/UserAcquisitionSection";
-import { AIInsightsSection } from "@/components/AIInsightsSection";
-import { FlywheelSection } from "@/components/FlywheelSection";
-import { ShareDataSection } from "@/components/ShareDataSection";
-import { ReferralRewardSection } from "@/components/ReferralRewardSection";
-import { FlywheelHealthDashboard } from "@/components/FlywheelHealthDashboard";
-import { RegistrationFunnelSection } from "@/components/RegistrationFunnelSection";
-import { MetricInfoTooltip } from "@/components/MetricInfoTooltip";
+import { DailyTrendChart } from "@/components/DailyTrendChart";
+import { DailyTrendTable } from "@/components/DailyTrendTable";
+import { GrowthFunnelChart } from "@/components/GrowthFunnelChart";
+import { RetentionRateChart } from "@/components/RetentionRateChart";
+import { GeoDistributionChart } from "@/components/GeoDistributionChart";
+import { SessionQualitySection } from "@/components/SessionQualitySection";
+import { BehaviourSection } from "@/components/BehaviourSection";
+import { MonetisationSection } from "@/components/MonetisationSection";
+import { HealthDashboard } from "@/components/HealthDashboard";
+import { TopEventsChart } from "@/components/TopEventsChart";
+import { UserAttributesChart } from "@/components/UserAttributesChart";
 import { useLocale } from "@/contexts/LocaleContext";
-import type { TranslationKey } from "@/lib/i18n";
-import { METRIC_FORMULAS } from "@/lib/metric-formulas";
 
-function CreatorSupplyInfoTooltip() {
-  const [show, setShow] = useState(false);
-  const info = METRIC_FORMULAS.CREATOR_SUPPLY_OVERVIEW;
-  if (!info) return null;
-  return (
-    <span
-      className="relative ml-1 inline-flex cursor-help items-center"
-      onMouseEnter={() => setShow(true)}
-      onMouseLeave={() => setShow(false)}
-    >
-      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3 w-3 text-[var(--secondary-text)]">
-        <path fillRule="evenodd" d="M15 8A7 7 0 1 1 1 8a7 7 0 0 1 14 0ZM9 5a1 1 0 1 1-2 0 1 1 0 0 1 2 0ZM6.75 8a.75.75 0 0 0 0 1.5h.75v1.75a.75.75 0 0 0 1.5 0v-2.5A.75.75 0 0 0 8.25 8h-1.5Z" clipRule="evenodd" />
-      </svg>
-      {show && (
-        <span className="absolute bottom-full left-1/2 z-[100] mb-2 w-[280px] -translate-x-1/2 rounded-md border border-[var(--border)] bg-[var(--card-bg)] px-2.5 py-2 text-[9px] leading-snug" style={{ boxShadow: "0 2px 8px rgba(0,0,0,0.12)" }}>
-          <span className="block font-semibold text-[var(--accent)]">{info.formula}</span>
-          <span className="mt-1 block text-[var(--secondary-text)]">{info.description}</span>
-        </span>
-      )}
-    </span>
-  );
+function pctChange(curr: number, prev: number) {
+  if (prev === 0) return curr > 0 ? "+100%" : "0%";
+  const pct = ((curr - prev) / prev) * 100;
+  return `${pct >= 0 ? "+" : ""}${pct.toFixed(1)}%`;
+}
+
+function formatCurrency(n: number) {
+  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(n);
 }
 
 type KPI = {
   data_range_start?: string;
   data_range_end?: string;
-  data_updated_at?: string | null;
-  pseudo_dau: number;
   dau: number;
-  d1_retention: number;
-  pay_rate: number;
-  arppu: number;
+  new_users: number;
+  chatters: number;
+  sessions_per_user: number;
+  avg_msgs_per_session: number;
+  avg_session_duration: number;
+  dispose_rate: number;
+  activation_rate: number;
   revenue: number;
-  withdrawal: number;
-  roi: number;
-  wow_pseudo_dau: number;
+  arpu: number;
+  d1_retention: number;
+  gift_users: number;
   wow_dau: number;
-  wow_d1: number;
-  wow_pay_rate: number;
-  wow_arppu: number;
+  wow_sessions_per_user: number;
+  wow_avg_msgs: number;
+  wow_avg_duration: number;
   wow_revenue: number;
-  wow_withdrawal: number;
-  wow_roi: number;
+  wow_arpu: number;
+  wow_d1_retention: number;
+  wow_activation_rate: number;
 };
 
 type DailyRow = {
   date: string;
-  new_users: number;
-  registration: number;
-  pseudo_dau: number;
   dau: number;
-  d1: string;
-  d1_detail?: string | null;
-  unlock_users: number;
-  unlock_ge2: number;
-  payers: number;
+  new_users: number;
+  chatters: number;
+  total_messages: number;
+  sessions: number;
+  disposed_sessions: number;
+  avg_msgs_per_session: number;
+  avg_session_duration_sec: number;
   revenue: number;
-  withdrawal: number;
+  gift_users: number;
 };
-
-function pctChange(curr: number, prev: number) {
-  if (prev === 0) return curr > 0 ? "+100%" : "0%";
-  const pct = ((curr - prev) / prev) * 100;
-  const sign = pct >= 0 ? "+" : "";
-  return `${sign}${pct.toFixed(1)}%`;
-}
-
-function formatCurrency(n: number) {
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-    minimumFractionDigits: 1,
-    maximumFractionDigits: 1,
-  }).format(n);
-}
 
 export default function DashboardPage() {
   const { t, locale, setLocale } = useLocale();
@@ -116,177 +70,78 @@ export default function DashboardPage() {
   const [dailyTrend, setDailyTrend] = useState<DailyRow[]>([]);
   const [kpiMode, setKpiMode] = useState<"today" | "7d" | "30d">("today");
   const [trendDays, setTrendDays] = useState(7);
-  const [filterChannel, setFilterChannel] = useState("all");
-  const [filterGeo, setFilterGeo] = useState("all");
   const [filterVersion, setFilterVersion] = useState("all");
-  const [filterUserSegment, setFilterUserSegment] = useState("all");
   const [filterPlatform, setFilterPlatform] = useState("all");
+  const [filterGeo, setFilterGeo] = useState("all");
   const [versions, setVersions] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [userAttributes, setUserAttributes] = useState<{ age: { attr: string; users: number; share: number }[]; device: { attr: string; users: number; share: number }[] } | null>(null);
-  const [geoDistribution, setGeoDistribution] = useState<{ region: string; region_name: string; users: number; share: number }[]>([]);
-  const [creatorSupply, setCreatorSupply] = useState<CreatorSupplyData | null>(null);
-  const [growthFunnel, setGrowthFunnel] = useState<{ step: string; stepLabel: string; users: number; conversion: number }[]>([]);
-  const [retention, setRetention] = useState<{ chart: { day: string; rate: number; wow: number }[] }>({ chart: [] });
-  const [retentionUnlock, setRetentionUnlock] = useState<{ chart: { day: string; rate: number; wow: number }[] }>({ chart: [] });
-  const [retentionCohortTab, setRetentionCohortTab] = useState<"signup" | "unlock">("signup");
-  const [monetization, setMonetization] = useState<{ revenue_stream: string; revenue: number; share: number }[]>([]);
-  const [economyHealth, setEconomyHealth] = useState<{ chart: { indicator: string; value: number; label: string }[]; metrics: { indicator: string; value: string }[]; segment?: string; active_users?: number } | null>(null);
-  const [econSegment, setEconSegment] = useState<"all" | "paid">("all");
-  const [econLoading, setEconLoading] = useState(false);
-  const [contentFeed, setContentFeed] = useState<ContentFeedData | null>(null);
-  const [unlockD7Retention, setUnlockD7Retention] = useState<{ total_unlock_users: number; d7_retained: number; rate: number } | null>(null);
-  const [unlockDistribution, setUnlockDistribution] = useState<{ bucket: string; user_count: number; pct: number }[]>([]);
-  const [unlockMeta, setUnlockMeta] = useState<{ days: number; cohort_start: string; cohort_end: string; distribution_total_users: number } | null>(null);
-  const [paidUsersData, setPaidUsersData] = useState<{
-    total_payers: number;
-    total_revenue: number;
-    subscription_revenue: number;
-    arppu: number;
-    avg_purchases: number;
-    first_time_payers: number;
-    repeat_payers: number;
-    d7_retention: { total_first_payers: number; d7_retained: number; rate: number };
-    first_pay_distribution: { bucket: string; user_count: number; pct: number }[];
-  } | null>(null);
-  const [paidUsersGeo, setPaidUsersGeo] = useState<{ country: string; country_name: string; payers: number; payer_share: number; revenue: number; revenue_share: number }[]>([]);
-  const [userAcquisition, setUserAcquisition] = useState<{ channels: { source: string; medium: string; channel: string; channel_desc: string; campaign: string; campaign_label: string; new_users: number; payers: number; revenue: number; conversion: number }[]; channelsSummary: { channel: string; channel_desc: string; new_users: number; payers: number; revenue: number; conversion: number }[]; referrals: { source: string; campaign: string; campaign_label: string; medium: string; channel: string; channel_desc: string; events: number; users: number }[] }>({ channels: [], channelsSummary: [], referrals: [] });
-  const [flywheelData, setFlywheelData] = useState<{ nodes: { id: string; name: string; nameCn: string; metrics: Record<string, number>; status: "healthy" | "warning" | "broken"; score: number; conversion: number | null; benchmark: string }[]; overallScore: number; summary: Record<string, number>; days: number }>({ nodes: [], overallScore: 0, summary: {}, days: 30 });
-  const [subscriptionData, setSubscriptionData] = useState<{ kpi: { total_exchange: number; auto_convert: number; manual_convert: number; total_paid: number; total_wallet_sub: number; paid_revenue: number; nonmember_hint: number; membership_entry: number; iap_start: number; iap_fail: number; topup_start: number; topup_success: number } | null; daily: { date: string; exchange: number; auto_convert: number; manual_convert: number; paid: number; wallet_sub: number; nonmember_hint: number; membership_entry: number; iap_start: number; iap_fail: number; topup_start: number; topup_success: number }[]; funnel: { step: string; label: string; users: number }[]; convertMethods: { method: string; count: number }[] }>({ kpi: null, daily: [], funnel: [], convertMethods: [] });
-  const [registrationFunnelData, setRegistrationFunnelData] = useState<{ funnel: { step: string; users: number; fromTop: number }[]; channels: { channel: string; clicked: number; success: number; failure: number }[] } | null>(null);
-  const [growthBehavior, setGrowthBehavior] = useState<{
-    scratch_distribution: { bucket: string; user_count: number; pct: number }[];
-    scratch_total_users: number;
-    reward_count_distribution: { bucket: string; user_count: number; pct: number }[];
-    reward_diamonds_distribution: { bucket: string; user_count: number; pct: number }[];
-    reward_total_users: number;
-    withdraw: { withdraw_users: number; withdraw_events: number; total_amount_usd: number };
-    withdraw_distribution: { bucket: string; user_count: number; pct: number }[];
-  } | null>(null);
+  const [activeTab, setActiveTab] = useState<"overview" | "activation" | "sessions" | "behaviour" | "retention" | "monetisation">("overview");
   const [analyticsDays, setAnalyticsDays] = useState(30);
   const [analyticsLoading, setAnalyticsLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState<"overview" | "growth" | "monetization" | "flywheel" | "ai">("overview");
   const [authEnabled, setAuthEnabled] = useState(false);
-  /** Tracks which tab+analyticsDays bundles have been loaded (P0 tab-scoped fetch). */
+
+  // Activation
+  const [activationFunnel, setActivationFunnel] = useState<{ step: string; label: string; users: number; conversion: number }[]>([]);
+  // Session Quality
+  const [sessionData, setSessionData] = useState<{ summary: Record<string, number>; message_distribution: { bucket: string; session_count: number }[]; duration_distribution: { bucket: string; session_count: number }[] } | null>(null);
+  // Behaviour
+  const [behaviourData, setBehaviourData] = useState<{ daily: Record<string, unknown>[]; personas: Record<string, unknown>[] } | null>(null);
+  // Retention
+  const [retentionData, setRetentionData] = useState<{ retention: { day: string; retained: number; cohort_size: number; rate: number }[]; returning_sessions: Record<string, unknown>[] } | null>(null);
+  // Monetisation
+  const [monetisationData, setMonetisationData] = useState<Record<string, unknown> | null>(null);
+  // Economy
+  const [economyData, setEconomyData] = useState<Record<string, unknown> | null>(null);
+  // Geo & Attributes
+  const [geoData, setGeoData] = useState<{ region: string; region_name: string; users: number; share: number }[]>([]);
+  const [userAttributes, setUserAttributes] = useState<{ device: { attr: string; users: number; share: number }[]; language: { attr: string; users: number; share: number }[] } | null>(null);
+  // Health
+  const [healthData, setHealthData] = useState<{ indicators: { id: string; label: string; value: number; unit: string; status: string }[]; revenue: number; dau_avg: number } | null>(null);
+  // Top Events
+  const [topEvents, setTopEvents] = useState<{ event: string; count: number; users: number }[]>([]);
+
   const analyticsLoadedRef = useRef<Set<string>>(new Set());
 
-  const fetchGrowthBundle = useCallback(async () => {
-    const qs = `?days=${analyticsDays}`;
-    const [
-      ua,
-      geo,
-      cs,
-      gf,
-      regFunnel,
-      retBoth,
-      cf,
-      um,
-      acq,
-      fw,
-      gb,
-    ] = await Promise.all([
-      fetch(`/api/marketing/user-attributes${qs}`).then((r) => r.json()),
-      fetch(`/api/marketing/geo-distribution${qs}`).then((r) => r.json()),
-      fetch(`/api/marketing/creator-supply${qs}`).then((r) => r.json()),
-      fetch(`/api/marketing/growth-funnel${qs}`).then((r) => (r.ok ? r.json() : [])),
-      fetch(`/api/marketing/registration-funnel${qs}`).then((r) => (r.ok ? r.json() : { funnel: [], channels: [] })),
-      fetch(`/api/marketing/retention${qs}&cohort=both`).then((r) =>
-        r.ok ? r.json() : { signup: { chart: [] }, unlock: { chart: [] } }
-      ),
-      fetch(`/api/marketing/content-feed${qs}`).then((r) => r.json()),
-      fetch(`/api/marketing/unlock-metrics${qs}`).then((r) => (r.ok ? r.json() : null)),
-      fetch(`/api/marketing/user-acquisition${qs}`).then((r) => r.json()).catch(() => ({ channels: [], referrals: [] })),
-      fetch(`/api/marketing/flywheel${qs}`).then((r) => r.json()).catch(() => ({ nodes: [], overallScore: 0, summary: {}, days: 30 })),
-      fetch(`/api/marketing/growth-behavior${qs}`).then((r) => (r.ok ? r.json() : null)),
-    ]);
-    if (ua?.age && ua?.device) setUserAttributes(ua);
-    if (Array.isArray(geo)) setGeoDistribution(geo);
-    if (cs?.chart && cs?.data) setCreatorSupply(cs);
-    if (Array.isArray(gf)) setGrowthFunnel(gf);
-    if (regFunnel?.funnel) setRegistrationFunnelData(regFunnel);
-    if (retBoth?.signup?.chart) setRetention({ chart: retBoth.signup.chart });
-    if (retBoth?.unlock?.chart) setRetentionUnlock({ chart: retBoth.unlock.chart });
-    if (cf?.daily && cf?.sup && cf?.up) setContentFeed(cf);
-    if (um?.d7_retention) setUnlockD7Retention(um.d7_retention);
-    if (Array.isArray(um?.distribution)) setUnlockDistribution(um.distribution);
-    if (um?.cohort_start) setUnlockMeta({ days: um.days, cohort_start: um.cohort_start, cohort_end: um.cohort_end, distribution_total_users: um.distribution_total_users ?? 0 });
-    if (acq?.channels) setUserAcquisition(acq);
-    if (fw?.nodes) setFlywheelData(fw);
-    if (gb?.scratch_distribution) setGrowthBehavior(gb);
-  }, [analyticsDays]);
-
-  const fetchMonetizationBundle = useCallback(async () => {
-    const qs = `?days=${analyticsDays}`;
-    const [pu, pg, sub, mon, cs] = await Promise.all([
-      fetch(`/api/marketing/paid-users${qs}`).then((r) => r.json()).catch(() => null),
-      fetch(`/api/marketing/paid-users-geo${qs}`).then((r) => r.json()).catch(() => []),
-      fetch(`/api/marketing/subscription-analysis${qs}`).then((r) => r.json()).catch(() => ({ kpi: null, daily: [], funnel: [], convertMethods: [] })),
-      fetch(`/api/marketing/monetization${qs}`).then((r) => r.json()),
-      fetch(`/api/marketing/creator-supply${qs}`).then((r) => r.json()),
-    ]);
-    if (pu?.total_payers !== undefined) setPaidUsersData(pu);
-    if (Array.isArray(pg)) setPaidUsersGeo(pg);
-    if (sub?.kpi) setSubscriptionData(sub);
-    if (Array.isArray(mon)) setMonetization(mon);
-    if (cs?.chart && cs?.data) setCreatorSupply(cs);
-  }, [analyticsDays]);
-
-  const fetchFlywheelOnly = useCallback(async () => {
-    const qs = `?days=${analyticsDays}`;
-    const fw = await fetch(`/api/marketing/flywheel${qs}`).then((r) => r.json()).catch(() => ({ nodes: [], overallScore: 0, summary: {}, days: 30 }));
-    if (fw?.nodes) setFlywheelData(fw);
-  }, [analyticsDays]);
-
   useEffect(() => {
-    fetch("/api/auth/status")
-      .then((r) => r.json())
-      .then((d) => setAuthEnabled(d.enabled === true))
-      .catch(() => {});
+    fetch("/api/auth/status").then((r) => r.json()).then((d) => setAuthEnabled(d.enabled === true)).catch(() => {});
   }, []);
 
   useEffect(() => {
-    fetch("/api/marketing/versions")
-      .then((r) => r.json())
-      .then((v) => Array.isArray(v) && setVersions(v))
-      .catch(() => {});
+    fetch("/api/moment/versions").then((r) => r.json()).then((v) => Array.isArray(v) && setVersions(v)).catch(() => {});
   }, []);
 
   useEffect(() => {
     async function fetchKPI() {
       const params = new URLSearchParams({ mode: kpiMode });
-      if (filterChannel !== "all") params.set("channel", filterChannel);
       if (filterVersion !== "all") params.set("version", filterVersion);
-      if (filterUserSegment !== "all") params.set("userSegment", filterUserSegment);
       if (filterPlatform !== "all") params.set("platform", filterPlatform);
       if (filterGeo !== "all") params.set("geo", filterGeo);
-      const r = await fetch(`/api/marketing/kpi?${params}`);
+      const r = await fetch(`/api/moment/kpi?${params}`);
       const j = await r.json();
       if (j.error) throw new Error(j.error);
       setKpi(j);
     }
     fetchKPI().catch((e) => setError(String(e)));
-  }, [kpiMode, filterChannel, filterVersion, filterUserSegment, filterPlatform, filterGeo]);
+  }, [kpiMode, filterVersion, filterPlatform, filterGeo]);
 
-  // Overview data: daily trend + overview
   useEffect(() => {
     async function fetchOverviewData() {
       setLoading(true);
       setError(null);
       const params = new URLSearchParams({ days: String(trendDays) });
-      if (filterChannel !== "all") params.set("channel", filterChannel);
       if (filterVersion !== "all") params.set("version", filterVersion);
-      if (filterUserSegment !== "all") params.set("userSegment", filterUserSegment);
       if (filterPlatform !== "all") params.set("platform", filterPlatform);
       if (filterGeo !== "all") params.set("geo", filterGeo);
-      const qs = `?${params}`;
       try {
-        const [dt, o] = await Promise.all([
-          fetch(`/api/marketing/daily-trend${qs}`).then((r) => r.json()),
-          fetch(`/api/marketing/overview${qs}`).then((r) => r.json()),
+        const [dt, hd, te] = await Promise.all([
+          fetch(`/api/moment/daily-trend?${params}`).then((r) => r.json()),
+          fetch(`/api/moment/health-dashboard?days=${trendDays}`).then((r) => r.json()).catch(() => null),
+          fetch(`/api/moment/top-events?days=${trendDays}`).then((r) => r.json()).catch(() => []),
         ]);
         if (Array.isArray(dt)) setDailyTrend(dt);
-        if (o.error) throw new Error(o.error);
+        if (hd?.indicators) setHealthData(hd);
+        if (Array.isArray(te)) setTopEvents(te);
       } catch (e) {
         setError(e instanceof Error ? e.message : "Failed to load");
       } finally {
@@ -294,84 +149,56 @@ export default function DashboardPage() {
       }
     }
     fetchOverviewData();
-  }, [trendDays, filterChannel, filterVersion, filterUserSegment, filterPlatform, filterGeo]);
+  }, [trendDays, filterVersion, filterPlatform, filterGeo]);
 
-  // Tab-scoped analytics (P0): only fetch bundles for the active tab + AI prefetch
+  const fetchTabData = useCallback(async (tab: string, days: number) => {
+    const qs = `?days=${days}`;
+    if (tab === "activation") {
+      const [funnel, geo, attrs] = await Promise.all([
+        fetch(`/api/moment/activation-funnel${qs}`).then((r) => r.json()).catch(() => []),
+        fetch(`/api/moment/geo${qs}`).then((r) => r.json()).catch(() => []),
+        fetch(`/api/moment/user-attributes${qs}`).then((r) => r.json()).catch(() => null),
+      ]);
+      if (Array.isArray(funnel)) setActivationFunnel(funnel);
+      if (Array.isArray(geo)) setGeoData(geo);
+      if (attrs) setUserAttributes(attrs);
+    } else if (tab === "sessions") {
+      const data = await fetch(`/api/moment/session-quality${qs}`).then((r) => r.json()).catch(() => null);
+      if (data) setSessionData(data);
+    } else if (tab === "behaviour") {
+      const data = await fetch(`/api/moment/behaviour${qs}`).then((r) => r.json()).catch(() => null);
+      if (data) setBehaviourData(data);
+    } else if (tab === "retention") {
+      const data = await fetch(`/api/moment/retention${qs}`).then((r) => r.json()).catch(() => null);
+      if (data) setRetentionData(data);
+    } else if (tab === "monetisation") {
+      const [mon, econ] = await Promise.all([
+        fetch(`/api/moment/monetisation${qs}`).then((r) => r.json()).catch(() => null),
+        fetch(`/api/moment/economy${qs}`).then((r) => r.json()).catch(() => null),
+      ]);
+      if (mon) setMonetisationData(mon);
+      if (econ) setEconomyData(econ);
+    }
+  }, []);
+
   useEffect(() => {
     if (activeTab === "overview") return;
     const key = `${activeTab}-${analyticsDays}`;
     if (analyticsLoadedRef.current.has(key)) return;
-
     let cancelled = false;
     (async () => {
       setAnalyticsLoading(true);
       try {
-        if (activeTab === "growth") {
-          await fetchGrowthBundle();
-          analyticsLoadedRef.current.add(`growth-${analyticsDays}`);
-          analyticsLoadedRef.current.add(`flywheel-${analyticsDays}`);
-        } else if (activeTab === "monetization") {
-          await fetchMonetizationBundle();
-          analyticsLoadedRef.current.add(`monetization-${analyticsDays}`);
-        } else if (activeTab === "flywheel") {
-          await fetchFlywheelOnly();
-          analyticsLoadedRef.current.add(`flywheel-${analyticsDays}`);
-        } else if (activeTab === "ai") {
-          const d = analyticsDays;
-          const tasks: Promise<void>[] = [];
-          if (!analyticsLoadedRef.current.has(`growth-${d}`)) {
-            tasks.push(
-              fetchGrowthBundle().then(() => {
-                analyticsLoadedRef.current.add(`growth-${d}`);
-                analyticsLoadedRef.current.add(`flywheel-${d}`);
-              })
-            );
-          }
-          if (!analyticsLoadedRef.current.has(`monetization-${d}`)) {
-            tasks.push(
-              fetchMonetizationBundle().then(() => {
-                analyticsLoadedRef.current.add(`monetization-${d}`);
-              })
-            );
-          }
-          if (!analyticsLoadedRef.current.has(`flywheel-${d}`)) {
-            tasks.push(
-              fetchFlywheelOnly().then(() => {
-                analyticsLoadedRef.current.add(`flywheel-${d}`);
-              })
-            );
-          }
-          await Promise.all(tasks);
-        }
+        await fetchTabData(activeTab, analyticsDays);
         if (!cancelled) analyticsLoadedRef.current.add(key);
       } catch (e) {
-        console.error("Analytics fetch error:", e);
+        console.error("Tab fetch error:", e);
       } finally {
         if (!cancelled) setAnalyticsLoading(false);
       }
     })();
-    return () => {
-      cancelled = true;
-    };
-  }, [activeTab, analyticsDays, fetchGrowthBundle, fetchMonetizationBundle, fetchFlywheelOnly]);
-
-  // Economy Health segment toggle (monetization tab only — avoids duplicate fetch on overview)
-  useEffect(() => {
-    if (activeTab !== "monetization") return;
-    async function fetchEconSegment() {
-      setEconLoading(true);
-      try {
-        const r = await fetch(`/api/marketing/economy-health?days=${analyticsDays}&segment=${econSegment}`);
-        const data = await r.json();
-        if (data?.chart && data?.metrics) setEconomyHealth(data);
-      } catch (e) {
-        console.error("Economy health segment error:", e);
-      } finally {
-        setEconLoading(false);
-      }
-    }
-    fetchEconSegment();
-  }, [econSegment, analyticsDays, activeTab]);
+    return () => { cancelled = true; };
+  }, [activeTab, analyticsDays, fetchTabData]);
 
   if (loading && !kpi) {
     return (
@@ -385,55 +212,36 @@ export default function DashboardPage() {
   }
 
   const todayStr = new Date().toISOString().split("T")[0];
-  const tStr = t as (key: string) => string;
+  const tabs = ["overview", "activation", "sessions", "behaviour", "retention", "monetisation"] as const;
 
   return (
     <div className="flex min-h-screen flex-col bg-[var(--background)] text-[var(--foreground)]">
+      {/* Header */}
       <header className="sticky top-0 z-10 border-b border-[var(--border)] bg-[var(--card-bg)]/95 backdrop-blur-xl">
         <div className="mx-auto flex w-full max-w-[1600px] items-center justify-between px-4 py-3 sm:px-8">
           <div className="flex items-center gap-2">
-            <img src="/logo2.png" alt="" className="h-7 w-auto rounded-md" />
-            <span className="text-base font-semibold tracking-tight text-[var(--foreground)]">Dashboard</span>
+            <span className="text-base font-semibold tracking-tight text-[var(--foreground)]">{t("title")}</span>
           </div>
           <div className="flex items-center gap-3">
             <div className="flex rounded-full p-1" style={{ backgroundColor: "var(--pill-bg)", boxShadow: "var(--shadow-sm)" }}>
-              {(["overview", "growth", "monetization", "flywheel", "ai"] as const).map((tab) => (
+              {tabs.map((tab) => (
                 <button
                   key={tab}
                   onClick={() => setActiveTab(tab)}
-                  className={`rounded-full px-3.5 py-2 text-sm font-medium transition-all duration-200 ${
-                    activeTab === tab
-                      ? "text-white"
-                      : "text-[var(--secondary-text)] hover:text-[var(--foreground)]"
-                  }`}
+                  className={`rounded-full px-3 py-2 text-sm font-medium transition-all duration-200 ${activeTab === tab ? "text-white" : "text-[var(--secondary-text)] hover:text-[var(--foreground)]"}`}
                   style={activeTab === tab ? { backgroundColor: "var(--accent)", boxShadow: "var(--shadow-sm)" } : undefined}
                 >
                   {t(`tab_${tab}`)}
                 </button>
               ))}
             </div>
-            <a
-              href="/standup"
-              className="rounded-full px-3 py-1.5 text-sm font-medium text-[var(--secondary-text)] hover:text-[var(--foreground)]"
-            >
-              Standup
-            </a>
-            <a
-              href="/ops-daily"
-              className="rounded-full px-3 py-1.5 text-sm font-medium text-[var(--secondary-text)] hover:text-[var(--foreground)]"
-            >
-              Ops Daily
-            </a>
             {authEnabled && (
-            <button
-              onClick={async () => {
-                await fetch("/api/auth/logout", { method: "POST" });
-                window.location.href = "/login";
-              }}
-              className="rounded-full px-3 py-1.5 text-sm font-medium text-[var(--secondary-text)] hover:text-[var(--foreground)]"
-            >
-              {t("signOut")}
-            </button>
+              <button
+                onClick={async () => { await fetch("/api/auth/logout", { method: "POST" }); window.location.href = "/login"; }}
+                className="rounded-full px-3 py-1.5 text-sm font-medium text-[var(--secondary-text)] hover:text-[var(--foreground)]"
+              >
+                {t("signOut")}
+              </button>
             )}
           </div>
         </div>
@@ -446,599 +254,250 @@ export default function DashboardPage() {
           </div>
         )}
 
-        {/* Tab 1: Overview - Core KPI + Daily Trend */}
+        {/* ═══ Tab 1: Overview ═══ */}
         {activeTab === "overview" && (
           <>
-        {/* Overview Filters */}
-        <section className="mb-6 flex flex-wrap gap-3">
-          <div className="rounded-xl bg-[var(--card-bg)] px-4 py-3" style={{ border: "1px solid var(--card-stroke)", boxShadow: "var(--card-shadow)" }}>
-            <label className="mb-1 block text-[11px] font-medium text-[var(--secondary-text)]">{t("filterChannel")}</label>
-            <select
-              value={filterChannel}
-              onChange={(e) => setFilterChannel(e.target.value)}
-              disabled={loading}
-              className="min-w-[140px] rounded-lg bg-[var(--background)] px-3 py-2 text-xs text-[var(--foreground)] disabled:opacity-60 disabled:cursor-not-allowed"
-              style={{ border: "1px solid var(--border)" }}
-            >
-              <option value="all">{t("all")}</option>
-              <option value="organic">{t("filterChannelOrganic")}</option>
-              <option value="paid">{t("filterChannelPaid")}</option>
-              <option value="social">{t("filterChannelSocial")}</option>
-              <option value="app_store">{t("filterChannelAppStore")}</option>
-            </select>
-          </div>
-          <div className="rounded-xl bg-[var(--card-bg)] px-4 py-3" style={{ border: "1px solid var(--card-stroke)", boxShadow: "var(--card-shadow)" }}>
-            <label className="mb-1 block text-[11px] font-medium text-[var(--secondary-text)]">{t("filterVersion")}</label>
-            <select
-              value={filterVersion}
-              onChange={(e) => setFilterVersion(e.target.value)}
-              disabled={loading}
-              className="min-w-[140px] rounded-lg bg-[var(--background)] px-3 py-2 text-xs text-[var(--foreground)] disabled:opacity-60 disabled:cursor-not-allowed"
-              style={{ border: "1px solid var(--border)" }}
-            >
-              <option value="all">{t("all")}</option>
-              {versions.map((v) => (
-                <option key={v} value={v === "(not set)" ? "(not set)" : v}>{v}</option>
-              ))}
-            </select>
-          </div>
-          <div className="rounded-xl bg-[var(--card-bg)] px-4 py-3" style={{ border: "1px solid var(--card-stroke)", boxShadow: "var(--card-shadow)" }}>
-            <label className="mb-1 block text-[11px] font-medium text-[var(--secondary-text)]">{t("filterPlatform")}</label>
-            <select
-              value={filterPlatform}
-              onChange={(e) => setFilterPlatform(e.target.value)}
-              disabled={loading}
-              className="min-w-[140px] rounded-lg bg-[var(--background)] px-3 py-2 text-xs text-[var(--foreground)] disabled:opacity-60 disabled:cursor-not-allowed"
-              style={{ border: "1px solid var(--border)" }}
-            >
-              <option value="all">{t("all")}</option>
-              <option value="ANDROID">{t("filterPlatformAndroid")}</option>
-              <option value="IOS">{t("filterPlatformIos")}</option>
-              <option value="WEB">{t("filterPlatformWeb")}</option>
-            </select>
-          </div>
-          <div className="flex items-start gap-2 rounded-xl bg-[var(--card-bg)] px-4 py-3" style={{ border: "1px solid var(--card-stroke)", boxShadow: "var(--card-shadow)" }}>
-            <div>
-              <label className="mb-1 block text-[11px] font-medium text-[var(--secondary-text)]">{t("filterUserSegment")}</label>
-              <select
-                value={filterUserSegment}
-                onChange={(e) => setFilterUserSegment(e.target.value)}
-                disabled={loading}
-                className="min-w-[180px] rounded-lg bg-[var(--background)] px-3 py-2 text-xs text-[var(--foreground)] disabled:opacity-60 disabled:cursor-not-allowed"
-                style={{ border: "1px solid var(--border)" }}
-              >
-                <option value="all">{t("filterUserAll")}</option>
-                <option value="new">{t("filterUserNew")}</option>
-                <option value="old">{t("filterUserOld")}</option>
-                <option value="returning">{t("filterUserReturning")}</option>
-              </select>
-            </div>
-            {filterUserSegment === "returning" && (
-              <span className="self-center text-[10px] text-[var(--secondary-text)]" style={{ maxWidth: 220 }}>
-                {t("filterUserReturningNote")}
-              </span>
-            )}
-          </div>
-          <div className="rounded-xl bg-[var(--card-bg)] px-4 py-3" style={{ border: "1px solid var(--card-stroke)", boxShadow: "var(--card-shadow)" }}>
-            <label className="mb-1 block text-[11px] font-medium text-[var(--secondary-text)]">{t("filterGeo")}</label>
-            <select
-              value={filterGeo}
-              onChange={(e) => setFilterGeo(e.target.value)}
-              disabled={loading}
-              className="min-w-[160px] rounded-lg bg-[var(--background)] px-3 py-2 text-xs text-[var(--foreground)] disabled:opacity-60 disabled:cursor-not-allowed"
-              style={{ border: "1px solid var(--border)" }}
-            >
-              <option value="all">{t("all")}</option>
-              <option value="exclude_hk_cn_sg">{t("filterGeoExcludeHKCN")}</option>
-              <option value="US">{t("country_US")}</option>
-              <option value="GB">{t("country_GB")}</option>
-              <option value="IN">{t("country_IN")}</option>
-              <option value="BR">{t("country_BR")}</option>
-              <option value="ID">{t("country_ID")}</option>
-              <option value="DE">{t("country_DE")}</option>
-              <option value="FR">{t("country_FR")}</option>
-              <option value="JP">{t("country_JP")}</option>
-              <option value="KR">{t("country_KR")}</option>
-              <option value="CA">{t("country_CA")}</option>
-              <option value="MX">{t("country_MX")}</option>
-            </select>
-          </div>
-        </section>
-
-        {/* Core KPI Snapshot */}
-        <section className="mb-8">
-          <div className="mb-2 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <h2 className="text-base font-semibold tracking-tight">
-              {t("coreKpi")}
-              <span className="ml-2 font-normal text-[11px] text-[var(--secondary-text)]">
-                {kpi?.data_range_start && kpi?.data_range_end
-                  ? t("dataRange") + `: ${kpi.data_range_start} ~ ${kpi.data_range_end}`
-                  : t("dataRange") + `: ${todayStr}`}
-                {kpi?.data_updated_at && (
-                  <> · {t("lastUpdated")}: {kpi.data_updated_at}</>
-                )}
-              </span>
-            </h2>
-            <div className="flex shrink-0 items-center gap-2">
-              <label htmlFor="kpi-period" className="text-[11px] font-medium text-[var(--secondary-text)]">{t("kpiPeriod")}:</label>
-              <select
-                id="kpi-period"
-                value={kpiMode}
-                onChange={(e) => setKpiMode(e.target.value as "today" | "7d" | "30d")}
-                className="rounded-lg bg-[var(--card-bg)] px-3 py-2 text-xs text-[var(--foreground)]"
-                style={{ border: "1px solid var(--card-stroke)", boxShadow: "var(--card-shadow)" }}
-              >
-                <option value="today">{t("today")}</option>
-                <option value="7d">{t("days7")}</option>
-                <option value="30d">{t("days30")}</option>
-              </select>
-            </div>
-          </div>
-          <div className="mb-4 mt-2 flex flex-wrap gap-2">
-            <span className="inline-flex rounded px-2 py-0.5 text-[10px] font-medium" style={{ backgroundColor: "var(--background)", border: "1px solid var(--border)", color: "var(--secondary-text)" }}>
-              {t("filterChannel")}: {filterChannel === "all" ? t("all") : filterChannel === "organic" ? t("filterChannelOrganic") : filterChannel === "paid" ? t("filterChannelPaid") : filterChannel === "social" ? t("filterChannelSocial") : t("filterChannelAppStore")}
-            </span>
-            <span className="inline-flex rounded px-2 py-0.5 text-[10px] font-medium" style={{ backgroundColor: "var(--background)", border: "1px solid var(--border)", color: "var(--secondary-text)" }}>
-              {t("filterVersion")}: {filterVersion === "all" ? t("all") : filterVersion}
-            </span>
-            <span className="inline-flex rounded px-2 py-0.5 text-[10px] font-medium" style={{ backgroundColor: "var(--background)", border: "1px solid var(--border)", color: "var(--secondary-text)" }}>
-              {t("filterPlatform")}: {filterPlatform === "all" ? t("all") : filterPlatform === "ANDROID" ? t("filterPlatformAndroid") : filterPlatform === "IOS" ? t("filterPlatformIos") : t("filterPlatformWeb")}
-            </span>
-            <span className="inline-flex rounded px-2 py-0.5 text-[10px] font-medium" style={{ backgroundColor: "var(--background)", border: "1px solid var(--border)", color: "var(--secondary-text)" }}>
-              {t("filterUserSegment")}: {filterUserSegment === "all" ? t("filterUserAll") : filterUserSegment === "new" ? t("filterUserNew") : filterUserSegment === "old" ? t("filterUserOld") : t("filterUserReturning")}
-            </span>
-            <span className="inline-flex rounded px-2 py-0.5 text-[10px] font-medium" style={{ backgroundColor: "var(--background)", border: "1px solid var(--border)", color: "var(--secondary-text)" }}>
-              {t("filterGeo")}: {filterGeo === "all" ? t("all") : filterGeo === "exclude_hk_cn_sg" ? t("filterGeoExcludeHKCN") : t(`country_${filterGeo}` as TranslationKey)}
-            </span>
-          </div>
-          {filterGeo === "exclude_hk_cn_sg" && (
-            <p className="mb-4 text-[11px] text-[var(--secondary-text)]" role="note">
-              {t("overviewExcludeNote")}
-            </p>
-          )}
-          <p className="mb-4 text-[10px] text-[var(--secondary-text)]" role="note">
-            {t("d1CohortNote")}
-          </p>
-
-          {kpi && (
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-8">
-              <KPICard
-                title="Pseudo DAU"
-                value={kpi.pseudo_dau.toLocaleString()}
-                change={pctChange(kpi.pseudo_dau, kpi.wow_pseudo_dau)}
-                changePositive={kpi.pseudo_dau >= kpi.wow_pseudo_dau}
-                metricKey="PSEUDO_DAU"
-                vsLabel={t("vs7d")}
-              />
-              <KPICard
-                title="DAU"
-                value={kpi.dau.toLocaleString()}
-                change={pctChange(kpi.dau, kpi.wow_dau)}
-                changePositive={kpi.dau >= kpi.wow_dau}
-                metricKey="DAU"
-                vsLabel={t("vs7d")}
-              />
-              <KPICard
-                title="D1 Retention"
-                value={`${kpi.d1_retention}%`}
-                change={pctChange(kpi.d1_retention, kpi.wow_d1)}
-                changePositive={kpi.d1_retention >= kpi.wow_d1}
-                metricKey="D1_RETENTION"
-                vsLabel={t("vs7d")}
-              />
-              <KPICard
-                title="Pay Rate"
-                value={`${kpi.pay_rate.toFixed(1)}%`}
-                change={pctChange(kpi.pay_rate, kpi.wow_pay_rate)}
-                changePositive={kpi.pay_rate >= kpi.wow_pay_rate}
-                metricKey="PAY_RATE"
-                vsLabel={t("vs7d")}
-              />
-              <KPICard
-                title="ARPPU"
-                value={formatCurrency(kpi.arppu)}
-                change={pctChange(kpi.arppu, kpi.wow_arppu)}
-                changePositive={kpi.arppu >= kpi.wow_arppu}
-                metricKey="ARPPU"
-                vsLabel={t("vs7d")}
-              />
-              <KPICard
-                title="Total Revenue"
-                value={formatCurrency(kpi.revenue)}
-                change={pctChange(kpi.revenue, kpi.wow_revenue)}
-                changePositive={kpi.revenue >= kpi.wow_revenue}
-                metricKey="REVENUE"
-                vsLabel={t("vs7d")}
-              />
-              <KPICard
-                title="Total Withdrawal"
-                value={formatCurrency(kpi.withdrawal)}
-                change={pctChange(kpi.withdrawal, kpi.wow_withdrawal)}
-                changePositive={kpi.withdrawal >= kpi.wow_withdrawal}
-                metricKey="WITHDRAWAL"
-                vsLabel={t("vs7d")}
-              />
-              <KPICard
-                title="ROI"
-                value={kpi.roi.toFixed(2)}
-                change={pctChange(kpi.roi, kpi.wow_roi)}
-                changePositive={kpi.roi >= kpi.wow_roi}
-                metricKey="ROI"
-                vsLabel={t("vs7d")}
-              />
-            </div>
-          )}
-        </section>
-
-        {/* Daily Trend */}
-        <section className="mb-8">
-          <div className="mb-2 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <h2 className="text-base font-semibold tracking-tight">
-              {t("dailyTrend")}
-              <span className="ml-2 font-normal text-[11px] text-[var(--secondary-text)]">
-                {(() => {
-                  const end = todayStr;
-                  const start = new Date();
-                  start.setDate(start.getDate() - trendDays + 1);
-                  const startStr = start.toISOString().slice(0, 10);
-                  return t("dataRange") + `: ${startStr} ~ ${end}`;
-                })()}
-                {kpi?.data_updated_at && (
-                  <> · {t("lastUpdated")}: {kpi.data_updated_at}</>
-                )}
-              </span>
-            </h2>
-            <div className="flex shrink-0 items-center gap-2">
-              <label htmlFor="trend-range" className="text-[11px] font-medium text-[var(--secondary-text)]">{t("trendRange")}:</label>
-              <select
-                id="trend-range"
-                value={trendDays}
-                onChange={(e) => setTrendDays(Number(e.target.value))}
-                className="rounded-lg bg-[var(--card-bg)] px-3 py-2 text-xs text-[var(--foreground)]"
-                style={{ border: "1px solid var(--card-stroke)", boxShadow: "var(--card-shadow)" }}
-              >
-                <option value={7}>7 {t("days")}</option>
-                <option value={14}>14 {t("days")}</option>
-                <option value={30}>30 {t("days")}</option>
-              </select>
-            </div>
-          </div>
-          <div className="mb-4 mt-2 flex flex-wrap gap-2">
-                <span className="inline-flex rounded px-2 py-0.5 text-[10px] font-medium" style={{ backgroundColor: "var(--background)", border: "1px solid var(--border)", color: "var(--secondary-text)" }}>
-                  {t("filterChannel")}: {filterChannel === "all" ? t("all") : filterChannel === "organic" ? t("filterChannelOrganic") : filterChannel === "paid" ? t("filterChannelPaid") : filterChannel === "social" ? t("filterChannelSocial") : t("filterChannelAppStore")}
-                </span>
-                <span className="inline-flex rounded px-2 py-0.5 text-[10px] font-medium" style={{ backgroundColor: "var(--background)", border: "1px solid var(--border)", color: "var(--secondary-text)" }}>
-                  {t("filterVersion")}: {filterVersion === "all" ? t("all") : filterVersion}
-                </span>
-                <span className="inline-flex rounded px-2 py-0.5 text-[10px] font-medium" style={{ backgroundColor: "var(--background)", border: "1px solid var(--border)", color: "var(--secondary-text)" }}>
-                  {t("filterPlatform")}: {filterPlatform === "all" ? t("all") : filterPlatform === "ANDROID" ? t("filterPlatformAndroid") : filterPlatform === "IOS" ? t("filterPlatformIos") : t("filterPlatformWeb")}
-                </span>
-                <span className="inline-flex rounded px-2 py-0.5 text-[10px] font-medium" style={{ backgroundColor: "var(--background)", border: "1px solid var(--border)", color: "var(--secondary-text)" }}>
-                  {t("filterUserSegment")}: {filterUserSegment === "all" ? t("filterUserAll") : filterUserSegment === "new" ? t("filterUserNew") : filterUserSegment === "old" ? t("filterUserOld") : t("filterUserReturning")}
-                </span>
-                <span className="inline-flex rounded px-2 py-0.5 text-[10px] font-medium" style={{ backgroundColor: "var(--background)", border: "1px solid var(--border)", color: "var(--secondary-text)" }}>
-                  {t("filterGeo")}: {filterGeo === "all" ? t("all") : filterGeo === "exclude_hk_cn_sg" ? t("filterGeoExcludeHKCN") : t(`country_${filterGeo}` as TranslationKey)}
-                </span>
-          </div>
-
-          <div className="overflow-hidden rounded-xl bg-[var(--card-bg)]" style={{ border: "1px solid var(--card-stroke)", boxShadow: "var(--card-shadow)" }}>
-            <div className="p-4 sm:p-5">
-              <DailyTrendChart data={dailyTrend} />
-              <div className="mt-5">
-                <DailyTrendTable data={dailyTrend} />
+            {/* Filters */}
+            <section className="mb-6 flex flex-wrap gap-3">
+              <div className="rounded-xl bg-[var(--card-bg)] px-4 py-3" style={{ border: "1px solid var(--card-stroke)" }}>
+                <label className="mb-1 block text-[11px] font-medium text-[var(--secondary-text)]">{t("filterVersion")}</label>
+                <select value={filterVersion} onChange={(e) => setFilterVersion(e.target.value)} className="min-w-[120px] rounded-lg bg-[var(--background)] px-3 py-2 text-xs text-[var(--foreground)]" style={{ border: "1px solid var(--border)" }}>
+                  <option value="all">{t("all")}</option>
+                  {versions.map((v) => <option key={v} value={v}>{v}</option>)}
+                </select>
               </div>
-            </div>
-          </div>
-        </section>
+              <div className="rounded-xl bg-[var(--card-bg)] px-4 py-3" style={{ border: "1px solid var(--card-stroke)" }}>
+                <label className="mb-1 block text-[11px] font-medium text-[var(--secondary-text)]">{t("filterPlatform")}</label>
+                <select value={filterPlatform} onChange={(e) => setFilterPlatform(e.target.value)} className="min-w-[120px] rounded-lg bg-[var(--background)] px-3 py-2 text-xs text-[var(--foreground)]" style={{ border: "1px solid var(--border)" }}>
+                  <option value="all">{t("all")}</option>
+                  <option value="ANDROID">{t("filterPlatformAndroid")}</option>
+                  <option value="IOS">{t("filterPlatformIos")}</option>
+                </select>
+              </div>
+              <div className="rounded-xl bg-[var(--card-bg)] px-4 py-3" style={{ border: "1px solid var(--card-stroke)" }}>
+                <label className="mb-1 block text-[11px] font-medium text-[var(--secondary-text)]">{t("filterGeo")}</label>
+                <select value={filterGeo} onChange={(e) => setFilterGeo(e.target.value)} className="min-w-[120px] rounded-lg bg-[var(--background)] px-3 py-2 text-xs text-[var(--foreground)]" style={{ border: "1px solid var(--border)" }}>
+                  <option value="all">{t("all")}</option>
+                </select>
+              </div>
+            </section>
 
-        {/* Flywheel Health Dashboard */}
-        <FlywheelHealthDashboard t={t} />
+            {/* Core KPIs */}
+            <section className="mb-8">
+              <div className="mb-2 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <h2 className="text-base font-semibold tracking-tight">
+                  {t("coreKpi")}
+                  <span className="ml-2 font-normal text-[11px] text-[var(--secondary-text)]">
+                    {kpi?.data_range_start && kpi?.data_range_end ? `${t("dataRange")}: ${kpi.data_range_start} ~ ${kpi.data_range_end}` : `${t("dataRange")}: ${todayStr}`}
+                  </span>
+                </h2>
+                <div className="flex shrink-0 items-center gap-2">
+                  <label className="text-[11px] font-medium text-[var(--secondary-text)]">{t("kpiPeriod")}:</label>
+                  <select value={kpiMode} onChange={(e) => setKpiMode(e.target.value as "today" | "7d" | "30d")} className="rounded-lg bg-[var(--card-bg)] px-3 py-2 text-xs text-[var(--foreground)]" style={{ border: "1px solid var(--card-stroke)" }}>
+                    <option value="today">{t("today")}</option>
+                    <option value="7d">{t("days7")}</option>
+                    <option value="30d">{t("days30")}</option>
+                  </select>
+                </div>
+              </div>
 
+              {kpi && (
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5 xl:grid-cols-10">
+                  <KPICard title={t("kpiDau")} value={kpi.dau.toLocaleString()} change={pctChange(kpi.dau, kpi.wow_dau)} changePositive={kpi.dau >= kpi.wow_dau} metricKey="DAU" vsLabel={t("vs7d")} />
+                  <KPICard title={t("kpiNewUsers")} value={kpi.new_users.toLocaleString()} metricKey="NEW_USERS" vsLabel={t("vs7d")} />
+                  <KPICard title={t("kpiSessionsPerUser")} value={kpi.sessions_per_user.toFixed(2)} change={pctChange(kpi.sessions_per_user, kpi.wow_sessions_per_user)} changePositive={kpi.sessions_per_user >= kpi.wow_sessions_per_user} metricKey="SESSIONS_PER_USER" vsLabel={t("vs7d")} />
+                  <KPICard title={t("kpiAvgMsgs")} value={kpi.avg_msgs_per_session.toFixed(1)} change={pctChange(kpi.avg_msgs_per_session, kpi.wow_avg_msgs)} changePositive={kpi.avg_msgs_per_session >= kpi.wow_avg_msgs} metricKey="AVG_MSGS_PER_SESSION" vsLabel={t("vs7d")} />
+                  <KPICard title={t("kpiAvgDuration")} value={`${kpi.avg_session_duration}s`} change={pctChange(kpi.avg_session_duration, kpi.wow_avg_duration)} changePositive={kpi.avg_session_duration >= kpi.wow_avg_duration} metricKey="AVG_SESSION_DURATION" vsLabel={t("vs7d")} />
+                  <KPICard title={t("kpiActivation")} value={`${kpi.activation_rate}%`} change={pctChange(kpi.activation_rate, kpi.wow_activation_rate)} changePositive={kpi.activation_rate >= kpi.wow_activation_rate} metricKey="ACTIVATION_RATE" vsLabel={t("vs7d")} />
+                  <KPICard title={t("kpiD1")} value={`${kpi.d1_retention}%`} change={pctChange(kpi.d1_retention, kpi.wow_d1_retention)} changePositive={kpi.d1_retention >= kpi.wow_d1_retention} metricKey="D1_RETENTION" vsLabel={t("vs7d")} />
+                  <KPICard title={t("kpiDisposeRate")} value={`${kpi.dispose_rate}%`} metricKey="DISPOSE_RATE" vsLabel={t("vs7d")} />
+                  <KPICard title={t("kpiRevenue")} value={formatCurrency(kpi.revenue)} change={pctChange(kpi.revenue, kpi.wow_revenue)} changePositive={kpi.revenue >= kpi.wow_revenue} metricKey="REVENUE" vsLabel={t("vs7d")} />
+                  <KPICard title={t("kpiArpu")} value={formatCurrency(kpi.arpu)} change={pctChange(kpi.arpu, kpi.wow_arpu)} changePositive={kpi.arpu >= kpi.wow_arpu} metricKey="ARPU" vsLabel={t("vs7d")} />
+                </div>
+              )}
+            </section>
+
+            {/* Daily Trend */}
+            <section className="mb-8">
+              <div className="mb-2 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <h2 className="text-base font-semibold tracking-tight">{t("dailyTrend")}</h2>
+                <div className="flex shrink-0 items-center gap-2">
+                  <label className="text-[11px] font-medium text-[var(--secondary-text)]">{t("trendRange")}:</label>
+                  <select value={trendDays} onChange={(e) => setTrendDays(Number(e.target.value))} className="rounded-lg bg-[var(--card-bg)] px-3 py-2 text-xs text-[var(--foreground)]" style={{ border: "1px solid var(--card-stroke)" }}>
+                    <option value={7}>7 {t("days")}</option>
+                    <option value={14}>14 {t("days")}</option>
+                    <option value={30}>30 {t("days")}</option>
+                  </select>
+                </div>
+              </div>
+              <div className="overflow-hidden rounded-xl bg-[var(--card-bg)]" style={{ border: "1px solid var(--card-stroke)", boxShadow: "var(--card-shadow)" }}>
+                <div className="p-4 sm:p-5">
+                  <DailyTrendChart data={dailyTrend} />
+                  <div className="mt-5">
+                    <DailyTrendTable data={dailyTrend} />
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            {/* Health Dashboard */}
+            {healthData && <HealthDashboard data={healthData} t={t} />}
+
+            {/* Top Events */}
+            {topEvents.length > 0 && (
+              <section className="mb-8 overflow-hidden rounded-xl bg-[var(--card-bg)]" style={{ border: "1px solid var(--card-stroke)", boxShadow: "var(--card-shadow)" }}>
+                <div className="p-4 sm:p-5">
+                  <h2 className="text-base font-semibold tracking-tight">{t("topEventsTitle")}</h2>
+                  <p className="mt-0.5 text-xs text-[var(--secondary-text)]">{t("topEventsDesc")}</p>
+                  <div className="mt-4"><TopEventsChart data={topEvents} /></div>
+                </div>
+              </section>
+            )}
           </>
         )}
 
-        {/* Shared Period Selector for non-overview tabs */}
+        {/* Period selector for non-overview tabs */}
         {activeTab !== "overview" && (
-        <section className="mb-6">
-          <div className="flex flex-wrap items-center gap-4 rounded-xl bg-[var(--card-bg)] px-5 py-4" style={{ border: "1px solid var(--card-stroke)", boxShadow: "var(--card-shadow)" }}>
-            <div className="flex items-center gap-2">
-              <label className="text-[11px] font-medium text-[var(--secondary-text)]">{t("analyticsPeriod")}:</label>
-              <div className="flex rounded-full p-0.5" style={{ backgroundColor: "var(--pill-bg)" }}>
-                {[7, 14, 30].map((d) => (
-                  <button
-                    key={d}
-                    onClick={() => setAnalyticsDays(d)}
-                    disabled={analyticsLoading}
-                    className={`rounded-full px-3.5 py-1.5 text-xs font-medium transition-all duration-200 disabled:opacity-60 ${
-                      analyticsDays === d ? "text-[var(--foreground)]" : "text-[var(--secondary-text)] hover:text-[var(--foreground)]"
-                    }`}
-                    style={analyticsDays === d ? { backgroundColor: "var(--pill-active)", boxShadow: "var(--shadow-sm)" } : undefined}
-                  >
-                    {d}{t("days")}
-                  </button>
-                ))}
+          <section className="mb-6">
+            <div className="flex flex-wrap items-center gap-4 rounded-xl bg-[var(--card-bg)] px-5 py-4" style={{ border: "1px solid var(--card-stroke)", boxShadow: "var(--card-shadow)" }}>
+              <div className="flex items-center gap-2">
+                <label className="text-[11px] font-medium text-[var(--secondary-text)]">{t("analyticsPeriod")}:</label>
+                <div className="flex rounded-full p-0.5" style={{ backgroundColor: "var(--pill-bg)" }}>
+                  {[7, 14, 30].map((d) => (
+                    <button
+                      key={d}
+                      onClick={() => setAnalyticsDays(d)}
+                      disabled={analyticsLoading}
+                      className={`rounded-full px-3.5 py-1.5 text-xs font-medium transition-all duration-200 disabled:opacity-60 ${analyticsDays === d ? "text-[var(--foreground)]" : "text-[var(--secondary-text)] hover:text-[var(--foreground)]"}`}
+                      style={analyticsDays === d ? { backgroundColor: "var(--pill-active)", boxShadow: "var(--shadow-sm)" } : undefined}
+                    >
+                      {d}{t("days")}
+                    </button>
+                  ))}
+                </div>
               </div>
-            </div>
-            <div className="flex items-center gap-3 text-[11px] text-[var(--secondary-text)]">
-              <span>
-                {t("dataRange")}:{" "}
-                <strong className="font-semibold text-[var(--foreground)]">
-                  {(() => {
-                    const end = new Date(); const start = new Date();
-                    start.setDate(start.getDate() - analyticsDays);
-                    return `${start.toISOString().slice(0, 10)} ~ ${end.toISOString().slice(0, 10)}`;
-                  })()}
-                </strong>
-              </span>
-              <span>·</span>
-              <span>{t("lastUpdated")}: {todayStr}</span>
-              {analyticsLoading && (
-                <>
-                  <span>·</span>
+              <div className="flex items-center gap-3 text-[11px] text-[var(--secondary-text)]">
+                <span>{t("lastUpdated")}: {todayStr}</span>
+                {analyticsLoading && (
                   <span className="flex items-center gap-1">
                     <span className="inline-block h-3 w-3 animate-spin rounded-full border border-[var(--border)] border-t-[var(--accent)]" />
                     {t("loadingText")}
                   </span>
-                </>
-              )}
+                )}
+              </div>
             </div>
-          </div>
-        </section>
+          </section>
         )}
 
-        {/* Tab 2: Growth */}
-        {activeTab === "growth" && (
+        {/* ═══ Tab 2: Activation ═══ */}
+        {activeTab === "activation" && (
           <>
-        {/* Registration Funnel */}
-        <RegistrationFunnelSection data={registrationFunnelData} loading={analyticsLoading} analyticsDays={analyticsDays} t={t} />
-
-        {/* Growth Funnel & Retention */}
-        <div className="mb-8 grid gap-4 lg:grid-cols-2">
-          <section className="overflow-visible rounded-xl bg-[var(--card-bg)]" style={{ border: "1px solid var(--card-stroke)", boxShadow: "var(--card-shadow)" }}>
-            <div className="overflow-visible p-4 sm:p-5">
-              <div className="flex items-center justify-between">
-                <h2 className="text-base font-semibold tracking-tight">{t("growthFunnel")}</h2>
-                <span className="rounded px-1.5 py-0.5 text-[9px] font-medium" style={{ backgroundColor: "var(--background)", border: "1px solid var(--border)", color: "var(--secondary-text)" }}>{t("signupCohort")}: {analyticsDays}{t("days")}</span>
+            <section className="mb-8 overflow-visible rounded-xl bg-[var(--card-bg)]" style={{ border: "1px solid var(--card-stroke)", boxShadow: "var(--card-shadow)" }}>
+              <div className="p-4 sm:p-5">
+                <h2 className="text-base font-semibold tracking-tight">{t("activationTitle")}</h2>
+                <p className="mt-0.5 text-xs text-[var(--secondary-text)]">{t("activationDesc")}</p>
+                <div className="mt-4"><GrowthFunnelChart data={activationFunnel} days={analyticsDays} /></div>
               </div>
-              <p className="mt-0.5 text-xs text-[var(--secondary-text)]">{t("growthFunnelDesc")}</p>
-              <div className="mt-4"><GrowthFunnelChart data={growthFunnel} days={analyticsDays} /></div>
+            </section>
+            <div className="mb-8 grid gap-4 lg:grid-cols-2">
+              <section className="overflow-visible rounded-xl bg-[var(--card-bg)]" style={{ border: "1px solid var(--card-stroke)", boxShadow: "var(--card-shadow)" }}>
+                <div className="p-4 sm:p-5">
+                  <h2 className="text-base font-semibold tracking-tight">{t("geoTitle")}</h2>
+                  <p className="mt-0.5 text-xs text-[var(--secondary-text)]">{t("geoDesc")}</p>
+                  <div className="mt-4"><GeoDistributionChart data={geoData} /></div>
+                </div>
+              </section>
+              <section className="overflow-visible rounded-xl bg-[var(--card-bg)]" style={{ border: "1px solid var(--card-stroke)", boxShadow: "var(--card-shadow)" }}>
+                <div className="p-4 sm:p-5">
+                  <h2 className="text-base font-semibold tracking-tight">{t("userAttrTitle")}</h2>
+                  <p className="mt-0.5 text-xs text-[var(--secondary-text)]">{t("userAttrDesc")}</p>
+                  {userAttributes ? (
+                    <div className="mt-4"><UserAttributesChart age={userAttributes.device} device={userAttributes.language} ageLabel={t("deviceDist")} deviceLabel={t("languageDist")} /></div>
+                  ) : (
+                    <p className="mt-4 text-xs text-[var(--secondary-text)]">{t("loadingText")}</p>
+                  )}
+                </div>
+              </section>
             </div>
-          </section>
-          <section className="overflow-visible rounded-xl bg-[var(--card-bg)]" style={{ border: "1px solid var(--card-stroke)", boxShadow: "var(--card-shadow)" }}>
-            <div className="overflow-visible p-4 sm:p-5">
-              <div className="flex items-center justify-between">
-                <h2 className="text-base font-semibold tracking-tight">{t("retentionRate")}</h2>
-                <span className="rounded px-1.5 py-0.5 text-[9px] font-medium" style={{ backgroundColor: "var(--background)", border: "1px solid var(--border)", color: "var(--secondary-text)" }}>{retentionCohortTab === "unlock" ? t("retentionCohortUnlock") : t("retentionCohortRegistration")}: {analyticsDays}{t("days")}</span>
-              </div>
-              <div className="mb-3 flex items-center gap-1.5">
-                {(["signup", "unlock"] as const).map((tab) => (
-                  <button
-                    key={tab}
-                    onClick={() => setRetentionCohortTab(tab)}
-                    className="rounded-full px-3 py-1 text-[10px] font-medium transition-colors"
-                    style={retentionCohortTab === tab
-                      ? { backgroundColor: "var(--accent)", color: "#fff" }
-                      : { backgroundColor: "var(--background)", border: "1px solid var(--border)", color: "var(--secondary-text)" }}
-                  >
-                    {tab === "signup" ? t("retentionCohortSignup") : t("retentionCohortUnlock")}
-                  </button>
-                ))}
-              </div>
-              <p className="mt-0.5 text-xs text-[var(--secondary-text)]">{retentionCohortTab === "unlock" ? t("retentionDescUnlock") : t("retentionDesc")}</p>
-              <div className="mt-4"><RetentionRateChart chart={retentionCohortTab === "unlock" ? retentionUnlock.chart : retention.chart} cohortType={retentionCohortTab} /></div>
-            </div>
-          </section>
-        </div>
-
-        <UnlockInsightsSection d7Retention={unlockD7Retention} distribution={unlockDistribution} meta={unlockMeta} analyticsDays={analyticsDays} t={tStr} />
-        {growthBehavior && (
-          <ScratchRewardWithdrawSection
-            scratchDistribution={growthBehavior.scratch_distribution}
-            scratchTotalUsers={growthBehavior.scratch_total_users}
-            rewardCountDistribution={growthBehavior.reward_count_distribution}
-            rewardDiamondsDistribution={growthBehavior.reward_diamonds_distribution}
-            rewardTotalUsers={growthBehavior.reward_total_users}
-            withdraw={growthBehavior.withdraw}
-            withdrawDistribution={growthBehavior.withdraw_distribution}
-            analyticsDays={analyticsDays}
-            t={tStr}
-          />
-        )}
-        <ShareDataSection
-          shareNode={flywheelData.nodes.find((n) => n.id === "share") ?? null}
-          referralNode={flywheelData.nodes.find((n) => n.id === "referral") ?? null}
-          analyticsDays={analyticsDays}
-          t={tStr}
-        />
-        <ReferralRewardSection analyticsDays={analyticsDays} t={tStr} />
-        <UserAcquisitionSection channels={userAcquisition.channels} channelsSummary={userAcquisition.channelsSummary} referrals={userAcquisition.referrals} analyticsDays={analyticsDays} t={tStr} />
-
-        {/* User Attributes & Geo */}
-        <div className="mb-8 grid gap-4 lg:grid-cols-2 overflow-visible">
-          <section className="overflow-visible rounded-xl bg-[var(--card-bg)]" style={{ border: "1px solid var(--card-stroke)", boxShadow: "var(--card-shadow)" }}>
-            <div className="p-4 sm:p-5 overflow-visible">
-              <div className="flex items-center justify-between">
-                <h2 className="text-base font-semibold tracking-tight">{t("userAttributes")}</h2>
-                <span className="rounded px-1.5 py-0.5 text-[9px] font-medium" style={{ backgroundColor: "var(--background)", border: "1px solid var(--border)", color: "var(--secondary-text)" }}>{t("lastNDays").replace("{n}", String(analyticsDays))}</span>
-              </div>
-              <p className="mt-0.5 text-xs text-[var(--secondary-text)]">{t("userAttributesDesc")}</p>
-              {userAttributes ? (
-                <div className="mt-4"><UserAttributesChart age={userAttributes.age} device={userAttributes.device} ageLabel={t("ageDistribution")} deviceLabel={t("deviceType")} /></div>
-              ) : (
-                <p className="mt-4 text-xs text-[var(--secondary-text)]">{t("loadingText")}</p>
-              )}
-            </div>
-          </section>
-          <section className="overflow-visible rounded-xl bg-[var(--card-bg)]" style={{ border: "1px solid var(--card-stroke)", boxShadow: "var(--card-shadow)" }}>
-            <div className="p-4 sm:p-5 overflow-visible">
-              <div className="flex items-center justify-between">
-                <h2 className="text-base font-semibold tracking-tight">{t("geoDistribution")}</h2>
-                <span className="rounded px-1.5 py-0.5 text-[9px] font-medium" style={{ backgroundColor: "var(--background)", border: "1px solid var(--border)", color: "var(--secondary-text)" }}>{t("lastNDays").replace("{n}", String(analyticsDays))}</span>
-              </div>
-              <p className="mt-0.5 text-xs text-[var(--secondary-text)]">{t("geoDistributionDesc")}</p>
-              <div className="mt-4"><GeoDistributionChart data={geoDistribution} /></div>
-            </div>
-          </section>
-        </div>
-
-        {/* Content & Feed */}
-        <section className="mb-8 overflow-visible rounded-xl bg-[var(--card-bg)]" style={{ border: "1px solid var(--card-stroke)", boxShadow: "var(--card-shadow)" }}>
-          <div className="p-4 sm:p-5 overflow-visible">
-            <div className="flex items-center justify-between">
-              <h2 className="text-base font-semibold tracking-tight">{t("contentFeed")}</h2>
-              <span className="rounded px-1.5 py-0.5 text-[9px] font-medium" style={{ backgroundColor: "var(--background)", border: "1px solid var(--border)", color: "var(--secondary-text)" }}>{t("lastNDays").replace("{n}", String(analyticsDays))}</span>
-            </div>
-            <p className="mt-0.5 text-xs text-[var(--secondary-text)]">{t("contentFeedDesc")}</p>
-            {contentFeed ? (
-              <div className="mt-4"><ContentFeedChart data={contentFeed} /></div>
-            ) : (
-              <p className="mt-4 text-xs text-[var(--secondary-text)]">{t("loadingText")}</p>
-            )}
-          </div>
-        </section>
           </>
         )}
 
-        {/* Tab 3: Monetization */}
-        {activeTab === "monetization" && (
+        {/* ═══ Tab 3: Session Quality ═══ */}
+        {activeTab === "sessions" && (
+          <SessionQualitySection data={sessionData} loading={analyticsLoading} t={t} />
+        )}
+
+        {/* ═══ Tab 4: Behaviour ═══ */}
+        {activeTab === "behaviour" && (
+          <BehaviourSection data={behaviourData} loading={analyticsLoading} t={t} />
+        )}
+
+        {/* ═══ Tab 5: Retention ═══ */}
+        {activeTab === "retention" && retentionData && (
           <>
-        <PaidUsersSection data={paidUsersData} geo={paidUsersGeo} analyticsDays={analyticsDays} t={tStr} />
-
-        <SubscriptionAnalysisSection kpi={subscriptionData.kpi} daily={subscriptionData.daily} funnel={subscriptionData.funnel} convertMethods={subscriptionData.convertMethods} analyticsDays={analyticsDays} t={tStr} />
-
-        <div className="mb-8 grid gap-4 lg:grid-cols-2">
-          <section className="overflow-hidden rounded-xl bg-[var(--card-bg)]" style={{ border: "1px solid var(--card-stroke)", boxShadow: "var(--card-shadow)" }}>
-            <div className="p-4 sm:p-5">
-              <div className="flex items-center justify-between">
-                <h2 className="text-base font-semibold tracking-tight">{t("monetization")}</h2>
-                <span className="rounded px-1.5 py-0.5 text-[9px] font-medium" style={{ backgroundColor: "var(--background)", border: "1px solid var(--border)", color: "var(--secondary-text)" }}>{t("lastNDays").replace("{n}", String(analyticsDays))}</span>
+            <section className="mb-8 overflow-visible rounded-xl bg-[var(--card-bg)]" style={{ border: "1px solid var(--card-stroke)", boxShadow: "var(--card-shadow)" }}>
+              <div className="p-4 sm:p-5">
+                <h2 className="text-base font-semibold tracking-tight">{t("retentionTitle")}</h2>
+                <p className="mt-0.5 text-xs text-[var(--secondary-text)]">{t("retentionDesc")}</p>
+                <div className="mt-4">
+                  <RetentionRateChart chart={retentionData.retention} cohortType="signup" />
+                </div>
               </div>
-              <p className="mt-0.5 flex items-center gap-1 text-xs text-[var(--secondary-text)]">
-                <span>{t("monetizationDesc")}</span>
-                <MetricInfoTooltip metricKey="MONETIZATION_REVENUE_MIX" />
-              </p>
-              <div className="mt-4"><MonetizationChart data={monetization ?? []} /></div>
-            </div>
-          </section>
-          <section className="overflow-visible rounded-xl bg-[var(--card-bg)]" style={{ border: "1px solid var(--card-stroke)", boxShadow: "var(--card-shadow)" }}>
-            <div className="p-4 sm:p-5 overflow-visible">
-              <div className="flex items-center justify-between">
-                <h2 className="text-base font-semibold tracking-tight">{t("economyHealth")}</h2>
-                <span className="rounded px-1.5 py-0.5 text-[9px] font-medium" style={{ backgroundColor: "var(--background)", border: "1px solid var(--border)", color: "var(--secondary-text)" }}>{t("lastNDays").replace("{n}", String(analyticsDays))}</span>
+            </section>
+            <section className="mb-8 overflow-hidden rounded-xl bg-[var(--card-bg)]" style={{ border: "1px solid var(--card-stroke)", boxShadow: "var(--card-shadow)" }}>
+              <div className="p-4 sm:p-5">
+                <h2 className="text-base font-semibold tracking-tight">{t("returningTitle")}</h2>
+                <p className="mt-0.5 text-xs text-[var(--secondary-text)]">{t("returningDesc")}</p>
+                <div className="mt-4 overflow-x-auto">
+                  <table className="min-w-full text-xs">
+                    <thead>
+                      <tr className="border-b border-[var(--border)] text-left text-[var(--secondary-text)]">
+                        <th className="px-3 py-2 font-medium">Date</th>
+                        <th className="px-3 py-2 font-medium text-right">Active</th>
+                        <th className="px-3 py-2 font-medium text-right">Returning</th>
+                        <th className="px-3 py-2 font-medium text-right">Sessions</th>
+                        <th className="px-3 py-2 font-medium text-right">Ret. Sessions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(retentionData.returning_sessions as { date: string; active_users: number; returning_users: number; total_sessions: number; returning_sessions: number }[]).map((r) => (
+                        <tr key={r.date} className="border-b border-[var(--border)]">
+                          <td className="px-3 py-2 font-medium">{r.date}</td>
+                          <td className="px-3 py-2 text-right">{r.active_users.toLocaleString()}</td>
+                          <td className="px-3 py-2 text-right">{r.returning_users.toLocaleString()}</td>
+                          <td className="px-3 py-2 text-right">{r.total_sessions.toLocaleString()}</td>
+                          <td className="px-3 py-2 text-right">{r.returning_sessions.toLocaleString()}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
-              <p className="mt-0.5 text-xs text-[var(--secondary-text)]">{t("economyHealthDesc")}</p>
-              <div className="mt-4"><EconomyHealthChart data={economyHealth} segment={econSegment} onSegmentChange={setEconSegment} loading={econLoading} /></div>
-            </div>
-          </section>
-        </div>
-
-        <section className="mb-8 overflow-hidden rounded-xl bg-[var(--card-bg)]" style={{ border: "1px solid var(--card-stroke)", boxShadow: "var(--card-shadow)" }}>
-          <div className="p-4 sm:p-5">
-            <div className="flex items-center justify-between">
-              <h2 className="text-base font-semibold tracking-tight inline-flex items-center">
-                {t("creatorSupply")}
-                <CreatorSupplyInfoTooltip />
-              </h2>
-              <span className="rounded px-1.5 py-0.5 text-[9px] font-medium" style={{ backgroundColor: "var(--background)", border: "1px solid var(--border)", color: "var(--secondary-text)" }}>{t("lastNDays").replace("{n}", String(analyticsDays))}</span>
-            </div>
-            <p className="mt-0.5 text-xs text-[var(--secondary-text)]">{t("creatorSupplyDesc")}</p>
-            {creatorSupply ? (
-              <div className="mt-4"><CreatorSupplyChart data={creatorSupply} /></div>
-            ) : (
-              <p className="mt-4 text-xs text-[var(--secondary-text)]">{t("loadingText")}</p>
-            )}
-          </div>
-        </section>
+            </section>
           </>
         )}
 
-        {/* Tab 4: Flywheel */}
-        {activeTab === "flywheel" && (
-          <FlywheelSection
-            nodes={flywheelData.nodes}
-            overallScore={flywheelData.overallScore}
-            summary={flywheelData.summary}
-            days={analyticsDays}
-            t={tStr}
-          />
-        )}
-
-        {/* Tab 5: AI Analytics */}
-        {activeTab === "ai" && (
-          <AIInsightsSection
-            dashboardData={{
-              kpi,
-              dailyTrend,
-              growthFunnel,
-              retention,
-              userAttributes,
-              geoDistribution,
-              creatorSupply,
-              monetization,
-              economyHealth,
-              contentFeed,
-              userAcquisition,
-              subscriptionData,
-              paidUsersData,
-              paidUsersGeo,
-              unlockInsights: {
-                d7Retention: unlockD7Retention,
-                distribution: unlockDistribution,
-                meta: unlockMeta,
-              },
-            }}
-            t={tStr}
+        {/* ═══ Tab 6: Monetisation ═══ */}
+        {activeTab === "monetisation" && (
+          <MonetisationSection
+            data={monetisationData}
+            economyData={economyData}
+            loading={analyticsLoading}
+            t={t}
           />
         )}
       </main>
 
+      {/* Footer */}
       <footer className="mt-auto border-t border-[var(--border)] bg-[var(--card-bg)]/50 py-4">
         <div className="mx-auto flex w-full max-w-[1600px] flex-col items-center justify-between gap-3 px-4 sm:flex-row sm:px-8">
-          <p className="text-[11px] text-[var(--secondary-text)]">
-            © Ahoy Analytics Center · Secure access
-          </p>
+          <p className="text-[11px] text-[var(--secondary-text)]">© Moment Analytics · Secure access</p>
           <div className="flex items-center gap-1 rounded-full p-1" style={{ backgroundColor: "var(--pill-bg)", boxShadow: "var(--shadow-sm)" }}>
-            <button
-              onClick={() => setLocale("en")}
-              className={`rounded-full px-3 py-1.5 text-xs font-medium transition-all duration-200 ${locale === "en" ? "text-[var(--foreground)]" : "text-[var(--secondary-text)] hover:text-[var(--foreground)]"}`}
-              style={locale === "en" ? { backgroundColor: "var(--pill-active)", boxShadow: "var(--shadow-sm)" } : undefined}
-            >
-              EN
-            </button>
-            <button
-              onClick={() => setLocale("zh")}
-              className={`rounded-full px-3 py-1.5 text-xs font-medium transition-all duration-200 ${locale === "zh" ? "text-[var(--foreground)]" : "text-[var(--secondary-text)] hover:text-[var(--foreground)]"}`}
-              style={locale === "zh" ? { backgroundColor: "var(--pill-active)", boxShadow: "var(--shadow-sm)" } : undefined}
-            >
-              中文
-            </button>
+            <button onClick={() => setLocale("en")} className={`rounded-full px-3 py-1.5 text-xs font-medium transition-all duration-200 ${locale === "en" ? "text-[var(--foreground)]" : "text-[var(--secondary-text)] hover:text-[var(--foreground)]"}`} style={locale === "en" ? { backgroundColor: "var(--pill-active)", boxShadow: "var(--shadow-sm)" } : undefined}>EN</button>
+            <button onClick={() => setLocale("zh")} className={`rounded-full px-3 py-1.5 text-xs font-medium transition-all duration-200 ${locale === "zh" ? "text-[var(--foreground)]" : "text-[var(--secondary-text)] hover:text-[var(--foreground)]"}`} style={locale === "zh" ? { backgroundColor: "var(--pill-active)", boxShadow: "var(--shadow-sm)" } : undefined}>中文</button>
           </div>
         </div>
       </footer>
-
-      <AIChatWidget
-        dashboardData={{
-          kpi,
-          dailyTrend,
-          filters: {
-            channel: filterChannel,
-            version: filterVersion,
-            userSegment: filterUserSegment,
-            platform: filterPlatform,
-            geo: filterGeo,
-            kpiMode,
-            trendDays,
-          },
-          growthFunnel,
-          retention,
-          userAttributes,
-          geoDistribution,
-          creatorSupply,
-          monetization,
-          economyHealth,
-          contentFeed,
-        } as DashboardContext}
-      />
     </div>
   );
 }

@@ -1,183 +1,54 @@
 "use client";
 
-import { METRIC_FORMULAS } from "@/lib/metric-formulas";
-import { useState } from "react";
-
-type Row = {
+type DailyRow = {
   date: string;
-  new_users: number;
-  registration: number;
-  pseudo_dau: number;
   dau: number;
-  d1: string;
-  d1_detail?: string | null;
-  unlock_users: number;
-  unlock_ge2: number;
-  payers: number;
+  new_users: number;
+  chatters: number;
+  total_messages: number;
+  sessions: number;
+  disposed_sessions: number;
+  avg_msgs_per_session: number;
+  avg_session_duration_sec: number;
   revenue: number;
-  withdrawal: number;
+  gift_users: number;
 };
 
-function formatNum(n: number) {
-  return new Intl.NumberFormat("en-US").format(Math.round(n));
-}
-
-function formatCurrency(n: number) {
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  }).format(n);
-}
-
-/** Withdrawal amounts can be sub-dollar; show cents (e.g. $0.30) instead of rounding to $0. */
-function formatWithdrawalCurrency(n: number) {
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 2,
-  }).format(n);
-}
-
-function formatDate(d: string) {
-  const [y, m, day] = d.split("-");
-  return `${m}-${day}`;
-}
-
-const HEADER_METRIC_KEYS: Record<string, string> = {
-  NEW: "NEW",
-  REGISTRATION: "DAILY_REGISTRATION",
-  "PSEUDO DAU": "PSEUDO_DAU",
-  DAU: "DAU",
-  D1: "D1_RETENTION",
-  "UNLOCK USERS": "UNLOCK_USERS",
-  "UNLOCK≥2": "UNLOCK_GE2",
-  PAYERS: "PAYERS",
-  REVENUE: "REVENUE",
-  WITHDRAWAL: "WITHDRAWAL",
-};
-
-function ThWithTooltip({ label }: { label: string }) {
-  const [show, setShow] = useState(false);
-  const metricKey = HEADER_METRIC_KEYS[label];
-  const info = metricKey ? METRIC_FORMULAS[metricKey] : null;
+export function DailyTrendTable({ data }: { data: DailyRow[] }) {
+  if (!data.length) return null;
 
   return (
-    <th
-      className="relative px-3 py-2 text-right font-semibold text-[var(--secondary-text)]"
-      onMouseEnter={() => setShow(true)}
-      onMouseLeave={() => setShow(false)}
-    >
-      <span className="cursor-help border-b border-dashed border-transparent hover:border-[var(--border)]">{label}</span>
-      {show && info && (
-        <div
-          className="absolute bottom-full right-0 z-50 mb-1 w-56 rounded-md border border-[var(--border)] bg-[var(--card-bg)] px-2 py-1.5 text-[8px] leading-snug"
-          style={{ boxShadow: "0 1px 4px rgba(0,0,0,0.08)" }}
-        >
-          <p className="font-medium text-[var(--accent)]">{info.formula}</p>
-          <p className="mt-1 text-[var(--secondary-text)]">{info.description}</p>
-        </div>
-      )}
-    </th>
-  );
-}
-
-function CellWithTooltip({
-  value,
-  metricKey,
-}: {
-  value: string | number;
-  metricKey: string;
-}) {
-  const [show, setShow] = useState(false);
-  const info = METRIC_FORMULAS[metricKey];
-
-  return (
-    <td
-      className="relative px-3 py-2 text-right text-[11px] text-[var(--foreground)]"
-      onMouseEnter={() => setShow(true)}
-      onMouseLeave={() => setShow(false)}
-    >
-      <span className="cursor-help border-b border-dashed border-[var(--border)]">{value}</span>
-      {show && info && (
-        <div
-          className="absolute bottom-full right-0 z-50 mb-1 w-56 rounded-md border border-[var(--border)] bg-[var(--card-bg)] px-2 py-1.5 text-[8px] leading-snug"
-          style={{ boxShadow: "0 1px 4px rgba(0,0,0,0.08)" }}
-        >
-          <p className="font-medium text-[var(--accent)]">{info.formula}</p>
-          <p className="mt-1 text-[var(--secondary-text)]">{info.description}</p>
-        </div>
-      )}
-    </td>
-  );
-}
-
-function D1CellWithTooltip({ d1, d1_detail }: { d1: string; d1_detail?: string | null }) {
-  const [show, setShow] = useState(false);
-  const info = METRIC_FORMULAS["D1_RETENTION"];
-
-  return (
-    <td
-      className="relative px-3 py-2 text-right text-[11px] text-[var(--foreground)]"
-      onMouseEnter={() => setShow(true)}
-      onMouseLeave={() => setShow(false)}
-    >
-      <span className="cursor-help border-b border-dashed border-[var(--border)]">{d1}</span>
-      {d1_detail && <span className="ml-1 text-[9px] text-[var(--secondary-text)]">({d1_detail})</span>}
-      {show && info && (
-        <div
-          className="absolute bottom-full right-0 z-50 mb-1 w-56 rounded-md border border-[var(--border)] bg-[var(--card-bg)] px-2 py-1.5 text-[8px] leading-snug"
-          style={{ boxShadow: "0 1px 4px rgba(0,0,0,0.08)" }}
-        >
-          <p className="font-medium text-[var(--accent)]">{info.formula}</p>
-          <p className="mt-1 text-[var(--secondary-text)]">{info.description}</p>
-          {d1_detail && <p className="mt-1 text-[var(--secondary-text)]">Data: {d1_detail} (retained/cohort)</p>}
-        </div>
-      )}
-    </td>
-  );
-}
-
-export function DailyTrendTable({ data }: { data: Row[] }) {
-  const display = data.slice(-7).reverse();
-
-  return (
-    <div className="overflow-x-auto rounded-xl" style={{ border: "1px solid var(--card-stroke)" }}>
-      <table className="w-full text-[11px]">
+    <div className="overflow-x-auto">
+      <table className="min-w-full text-xs">
         <thead>
-          <tr className="border-b border-[var(--border)] bg-[var(--background)]">
-            <th className="px-3 py-2 text-left font-semibold text-[var(--secondary-text)]">DATE</th>
-            <ThWithTooltip label="NEW" />
-            <ThWithTooltip label="REGISTRATION" />
-            <ThWithTooltip label="PSEUDO DAU" />
-            <ThWithTooltip label="DAU" />
-            <ThWithTooltip label="D1" />
-            <ThWithTooltip label="UNLOCK USERS" />
-            <ThWithTooltip label="UNLOCK≥2" />
-            <ThWithTooltip label="PAYERS" />
-            <ThWithTooltip label="REVENUE" />
-            <ThWithTooltip label="WITHDRAWAL" />
+          <tr className="border-b border-[var(--border)] text-left text-[var(--secondary-text)]">
+            <th className="px-3 py-2 font-medium">Date</th>
+            <th className="px-3 py-2 font-medium text-right">DAU</th>
+            <th className="px-3 py-2 font-medium text-right">New</th>
+            <th className="px-3 py-2 font-medium text-right">Chatters</th>
+            <th className="px-3 py-2 font-medium text-right">Messages</th>
+            <th className="px-3 py-2 font-medium text-right">Sessions</th>
+            <th className="px-3 py-2 font-medium text-right">Disposed</th>
+            <th className="px-3 py-2 font-medium text-right">Avg Msgs</th>
+            <th className="px-3 py-2 font-medium text-right">Avg Dur(s)</th>
+            <th className="px-3 py-2 font-medium text-right">Revenue</th>
+            <th className="px-3 py-2 font-medium text-right">Gift Users</th>
           </tr>
         </thead>
         <tbody>
-          {display.map((row, i) => (
-            <tr
-              key={i}
-              className="border-b border-[var(--border)] last:border-0 hover:bg-[var(--background)]"
-            >
-              <td className="px-3 py-2 font-medium text-[var(--foreground)]">{formatDate(row.date)}</td>
-              <CellWithTooltip value={formatNum(row.new_users)} metricKey="NEW" />
-              <CellWithTooltip value={formatNum(row.registration)} metricKey="DAILY_REGISTRATION" />
-              <CellWithTooltip value={formatNum(row.pseudo_dau)} metricKey="PSEUDO_DAU" />
-              <CellWithTooltip value={formatNum(row.dau)} metricKey="DAU" />
-              <D1CellWithTooltip d1={row.d1} d1_detail={row.d1_detail} />
-              <CellWithTooltip value={formatNum(row.unlock_users)} metricKey="UNLOCK_USERS" />
-              <CellWithTooltip value={formatNum(row.unlock_ge2)} metricKey="UNLOCK_GE2" />
-              <CellWithTooltip value={formatNum(row.payers)} metricKey="PAYERS" />
-              <CellWithTooltip value={formatCurrency(row.revenue)} metricKey="REVENUE" />
-              <CellWithTooltip value={formatWithdrawalCurrency(row.withdrawal)} metricKey="WITHDRAWAL" />
+          {data.map((r) => (
+            <tr key={r.date} className="border-b border-[var(--border)] hover:bg-[var(--background)]">
+              <td className="px-3 py-2 font-medium">{r.date}</td>
+              <td className="px-3 py-2 text-right">{r.dau.toLocaleString()}</td>
+              <td className="px-3 py-2 text-right">{r.new_users.toLocaleString()}</td>
+              <td className="px-3 py-2 text-right">{r.chatters.toLocaleString()}</td>
+              <td className="px-3 py-2 text-right">{r.total_messages.toLocaleString()}</td>
+              <td className="px-3 py-2 text-right">{r.sessions.toLocaleString()}</td>
+              <td className="px-3 py-2 text-right">{r.disposed_sessions.toLocaleString()}</td>
+              <td className="px-3 py-2 text-right">{r.avg_msgs_per_session}</td>
+              <td className="px-3 py-2 text-right">{r.avg_session_duration_sec}</td>
+              <td className="px-3 py-2 text-right">${r.revenue.toLocaleString()}</td>
+              <td className="px-3 py-2 text-right">{r.gift_users.toLocaleString()}</td>
             </tr>
           ))}
         </tbody>
