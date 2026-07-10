@@ -32,25 +32,37 @@ export function tableSuffixSince(intervalDays: number): string {
   )`;
 }
 
+/** Exclude Hong Kong, China, and Singapore from analytics. */
+const EXCLUDED_COUNTRIES = ["Hong Kong", "China", "Singapore"] as const;
+
+function countryFilter(alias?: string): string {
+  const col = alias ? `${alias}.geo.country` : "geo.country";
+  const list = EXCLUDED_COUNTRIES.map((c) => `'${c}'`).join(", ");
+  return `${col} NOT IN (${list})`;
+}
+
 export function tableFilter(days: number) {
   const low = `FORMAT_DATE('%Y%m%d', DATE_SUB(CURRENT_DATE(), INTERVAL ${days} DAY))`;
   const high = `FORMAT_DATE('%Y%m%d', CURRENT_DATE())`;
   return `${tableSuffixInRange(low, high)}
-      AND PARSE_DATE('%Y%m%d', event_date) >= DATE_SUB(CURRENT_DATE(), INTERVAL ${days} DAY)`;
+      AND PARSE_DATE('%Y%m%d', event_date) >= DATE_SUB(CURRENT_DATE(), INTERVAL ${days} DAY)
+      AND ${countryFilter()}`;
 }
 
 export function tableFilterDailyOnly(days: number) {
   const low = `FORMAT_DATE('%Y%m%d', DATE_SUB(CURRENT_DATE(), INTERVAL ${days} DAY))`;
   const high = `FORMAT_DATE('%Y%m%d', CURRENT_DATE())`;
   return `(REGEXP_CONTAINS(_TABLE_SUFFIX, r'^[0-9]{8}$') AND _TABLE_SUFFIX BETWEEN ${low} AND ${high})
-      AND PARSE_DATE('%Y%m%d', event_date) >= DATE_SUB(CURRENT_DATE(), INTERVAL ${days} DAY)`;
+      AND PARSE_DATE('%Y%m%d', event_date) >= DATE_SUB(CURRENT_DATE(), INTERVAL ${days} DAY)
+      AND ${countryFilter()}`;
 }
 
 export function tableFilterIntradayOnly(days: number) {
   const low = `FORMAT_DATE('%Y%m%d', DATE_SUB(CURRENT_DATE(), INTERVAL ${days} DAY))`;
   const high = `FORMAT_DATE('%Y%m%d', CURRENT_DATE())`;
   return `(STARTS_WITH(_TABLE_SUFFIX, 'intraday_') AND SUBSTR(_TABLE_SUFFIX, 10) BETWEEN ${low} AND ${high})
-      AND PARSE_DATE('%Y%m%d', event_date) >= DATE_SUB(CURRENT_DATE(), INTERVAL ${days} DAY)`;
+      AND PARSE_DATE('%Y%m%d', event_date) >= DATE_SUB(CURRENT_DATE(), INTERVAL ${days} DAY)
+      AND ${countryFilter()}`;
 }
 
 /* ──────────────────────────────────────────────────────────────
@@ -222,6 +234,7 @@ export function getKPIAndWowQuery(mode: "today" | "7d" | "30d", filters?: Overvi
       FROM \`${dataset()}.${table()}\`
       WHERE ${tableSuffixSince(days + 7)}
         AND PARSE_DATE('%Y%m%d', event_date) >= DATE_SUB(CURRENT_DATE(), INTERVAL ${days + 7} DAY)
+        AND ${countryFilter()}
         AND event_name NOT IN ('notification_receive','notification_dismiss','app_remove')${extra}
       GROUP BY 1
     ),
@@ -235,6 +248,7 @@ export function getKPIAndWowQuery(mode: "today" | "7d" | "30d", filters?: Overvi
         ON r.user_pseudo_id = b.user_pseudo_id
         AND PARSE_DATE('%Y%m%d', b.event_date) = DATE_ADD(r.first_dt, INTERVAL 1 DAY)
         AND ${tableSuffixSince(days + 7)}
+        AND ${countryFilter('b')}
         AND b.event_name NOT IN ('notification_receive','notification_dismiss','app_remove')${extra}
       GROUP BY 1
     )
@@ -363,6 +377,7 @@ export function getDailyTrendQuery(days: number = 7, filters?: OverviewFilters) 
       FROM \`${dataset()}.${table()}\`
       WHERE ${tableSuffixSince(days + 7)}
         AND PARSE_DATE('%Y%m%d', event_date) >= DATE_SUB(CURRENT_DATE(), INTERVAL ${days + 7} DAY)
+        AND ${countryFilter()}
         AND event_name NOT IN ('notification_receive','notification_dismiss','app_remove')${extra}
       GROUP BY 1
     ),
@@ -376,6 +391,7 @@ export function getDailyTrendQuery(days: number = 7, filters?: OverviewFilters) 
         ON r.user_pseudo_id = b.user_pseudo_id
         AND PARSE_DATE('%Y%m%d', b.event_date) = DATE_ADD(r.first_dt, INTERVAL 1 DAY)
         AND ${tableSuffixSince(days + 7)}
+        AND ${countryFilter('b')}
         AND b.event_name NOT IN ('notification_receive','notification_dismiss','app_remove')${extra}
       GROUP BY 1
     )
@@ -656,6 +672,7 @@ export function getRetentionQuery(days: number = 30) {
       FROM \`${dataset()}.${table()}\`
       WHERE ${tableSuffixSince(lookback)}
         AND PARSE_DATE('%Y%m%d', event_date) >= DATE_SUB(CURRENT_DATE(), INTERVAL ${lookback} DAY)
+        AND ${countryFilter()}
         AND event_name NOT IN ('notification_receive','notification_dismiss','app_remove')
       GROUP BY 1
     ),
@@ -668,6 +685,7 @@ export function getRetentionQuery(days: number = 30) {
       JOIN \`${dataset()}.${table()}\` b
         ON f.user_pseudo_id = b.user_pseudo_id
         AND ${tableSuffixSince(lookback)}
+        AND ${countryFilter('b')}
         AND PARSE_DATE('%Y%m%d', b.event_date) >= f.first_dt
         AND b.event_name NOT IN ('notification_receive','notification_dismiss','app_remove')
     )
