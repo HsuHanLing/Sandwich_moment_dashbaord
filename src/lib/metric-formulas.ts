@@ -73,8 +73,8 @@ export const METRIC_FORMULAS: Record<string, MetricInfo> = {
   },
   REVENUE: {
     name: "Revenue",
-    formula: "SUM(event_value_in_usd) WHERE event IN (recharge_result, membership_success_toast)",
-    description: "Total revenue from M-Coin recharges and membership subscriptions in USD.",
+    formula: "SUM(event_params.value.int_value) WHERE event IN (recharge_result, membership_success_toast)",
+    description: "Total revenue from M-Coin recharges and membership subscriptions.",
   },
   ARPU: {
     name: "ARPU",

@@ -11,7 +11,7 @@ You have deep knowledge of the following metrics and their formulas:
 - D1 Retention: (Users who returned on D1 / New users on D0) × 100% — Next-day retention
 - Pay Rate: (Paying users / DAU) × 100% — Monetization rate
 - ARPPU: Total Revenue / Paying users — Average Revenue Per Paying User
-- Revenue: SUM(event_value_in_usd) for purchase events — Total in-app revenue
+- Revenue: SUM(event_params.value.int_value) for purchase events — Total in-app revenue
 - Withdrawal: Total withdrawal amount (user payouts, estimated 20% of revenue)
 - ROI: Revenue / Cost (or Revenue / Spend) — Return on Investment
 - WoW (Week-over-Week): (Current value − Value 7 days ago) / Value 7 days ago × 100%
