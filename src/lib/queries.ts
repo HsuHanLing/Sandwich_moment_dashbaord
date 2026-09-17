@@ -89,7 +89,7 @@ function revenueAmount(): string {
     WHEN event_name = 'recharge_result' AND ${paramStr('status')} = 'success'
       THEN CAST(${paramInt('value')} AS FLOAT64)
     WHEN event_name = 'membership_success_toast'
-      THEN ${paramNumber('price')}
+      THEN ${paramNumber('plan_price')}
     ELSE 0
   END`;
 }
@@ -751,7 +751,7 @@ export function getMonetisationOverviewQuery(days: number = 30) {
       COUNT(DISTINCT CASE WHEN event_name = 'membership_success_toast'
         THEN user_pseudo_id END) as membership_subscribers,
       COALESCE(SUM(CASE WHEN event_name = 'membership_success_toast'
-        THEN ${paramNumber('price')} END), 0) as membership_revenue,
+        THEN ${paramNumber('plan_price')} END), 0) as membership_revenue,
       COUNT(DISTINCT CASE WHEN event_name = 'gift_item_purchase'
         THEN user_pseudo_id END) as gift_users,
       COUNT(CASE WHEN event_name = 'gift_item_purchase' THEN 1 END) as gift_count,
@@ -812,6 +812,23 @@ export function getMembershipFunnelQuery(days: number = 30) {
   `;
 }
 
+export function getMembershipProductRevenueQuery(days: number = 30) {
+  return `
+    SELECT
+      COALESCE(NULLIF(${paramStr('product_id')}, ''), '(unknown)') as product_id,
+      COALESCE(NULLIF(${paramStr('currency')}, ''), 'USD') as currency,
+      ${paramNumber('plan_price')} as plan_price,
+      COUNT(DISTINCT user_pseudo_id) as subscribers,
+      COUNT(*) as purchases,
+      COALESCE(SUM(${paramNumber('plan_price')}), 0) as revenue
+    FROM \`${dataset()}.${table()}\`
+    WHERE ${tableFilter(days)}
+      AND event_name = 'membership_success_toast'
+    GROUP BY product_id, currency, plan_price
+    ORDER BY revenue DESC, product_id ASC
+  `;
+}
+
 export function getGiftFunnelQuery(days: number = 30) {
   return `
     SELECT
@@ -843,7 +860,7 @@ export function getRevenueDailyQuery(days: number = 30) {
       COALESCE(SUM(CASE WHEN event_name = 'recharge_result'
         AND ${paramStr('status')} = 'success' THEN ${paramInt('value')} END), 0) as recharge_revenue,
       COALESCE(SUM(CASE WHEN event_name = 'membership_success_toast'
-        THEN ${paramNumber('price')} END), 0) as membership_revenue,
+        THEN ${paramNumber('plan_price')} END), 0) as membership_revenue,
       COUNT(CASE WHEN event_name = 'gift_item_purchase' THEN 1 END) as gifts_sent,
       COUNT(CASE WHEN event_name = 'ad_completion' THEN 1 END) as ad_views
     FROM \`${dataset()}.${table()}\`

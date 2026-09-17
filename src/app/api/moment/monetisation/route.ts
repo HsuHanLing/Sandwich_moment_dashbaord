@@ -4,6 +4,7 @@ import {
   getMonetisationOverviewQuery,
   getRechargeFunnelQuery,
   getMembershipFunnelQuery,
+  getMembershipProductRevenueQuery,
   getGiftFunnelQuery,
   getRevenueDailyQuery,
 } from "@/lib/queries";
@@ -14,10 +15,11 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const days = Math.min(parseInt(searchParams.get("days") || "30", 10), 90);
   try {
-    const [overviewRows, rechargeRows, membershipRows, giftRows, revenueRows] = await Promise.all([
+    const [overviewRows, rechargeRows, membershipRows, membershipProductRows, giftRows, revenueRows] = await Promise.all([
       bigquery.query({ query: getMonetisationOverviewQuery(days) }).then(([r]) => r),
       bigquery.query({ query: getRechargeFunnelQuery(days) }).then(([r]) => r),
       bigquery.query({ query: getMembershipFunnelQuery(days) }).then(([r]) => r),
+      bigquery.query({ query: getMembershipProductRevenueQuery(days) }).then(([r]) => r),
       bigquery.query({ query: getGiftFunnelQuery(days) }).then(([r]) => r),
       bigquery.query({ query: getRevenueDailyQuery(days) }).then(([r]) => r),
     ]);
@@ -65,6 +67,14 @@ export async function GET(request: Request) {
         promo_clicked: n(mb.promo_clicked),
         vip_gate_hits: n(mb.vip_gate_hits),
       },
+      membership_products: (membershipProductRows as Record<string, unknown>[]).map((r) => ({
+        product_id: String(r.product_id),
+        currency: String(r.currency),
+        plan_price: Math.round(n(r.plan_price) * 100) / 100,
+        subscribers: n(r.subscribers),
+        purchases: n(r.purchases),
+        revenue: Math.round(n(r.revenue) * 100) / 100,
+      })),
       gift_funnel: [
         { step: "popup_opened", label: "Gift Popup", users: n(gf.popup_opened) },
         { step: "item_clicked", label: "Item Selected", users: n(gf.item_clicked) },
@@ -86,6 +96,6 @@ export async function GET(request: Request) {
     });
   } catch (error) {
     console.error("Monetisation error:", error);
-    return NextResponse.json({ overview: {}, recharge_funnel: [], membership_funnel: [], gift_funnel: [], npc_gift: {}, revenue_daily: [] }, { status: 500 });
+    return NextResponse.json({ overview: {}, recharge_funnel: [], membership_funnel: [], membership_products: [], gift_funnel: [], npc_gift: {}, revenue_daily: [] }, { status: 500 });
   }
 }

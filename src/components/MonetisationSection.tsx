@@ -3,6 +3,14 @@
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
 
 type FunnelStep = { step: string; label: string; users: number };
+type MembershipProduct = {
+  product_id: string;
+  currency: string;
+  plan_price: number;
+  subscribers: number;
+  purchases: number;
+  revenue: number;
+};
 
 type Props = {
   data: Record<string, unknown> | null;
@@ -38,6 +46,16 @@ function FunnelChart({ title, steps, t }: { title: string; steps: FunnelStep[]; 
   );
 }
 
+function formatMoney(value: number, currency: string) {
+  const currencyCode = /^[A-Z]{3}$/.test(currency) ? currency : "USD";
+  return new Intl.NumberFormat(undefined, {
+    style: "currency",
+    currency: currencyCode,
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(value);
+}
+
 export function MonetisationSection({ data, economyData, loading, t }: Props) {
   if (loading || !data) {
     return (
@@ -50,6 +68,7 @@ export function MonetisationSection({ data, economyData, loading, t }: Props) {
   const ov = (data.overview || {}) as Record<string, number>;
   const rechargeFunnel = (data.recharge_funnel || []) as FunnelStep[];
   const membershipFunnel = (data.membership_funnel || []) as FunnelStep[];
+  const membershipProducts = (data.membership_products || []) as MembershipProduct[];
   const giftFunnel = (data.gift_funnel || []) as FunnelStep[];
   const npcGift = (data.npc_gift || {}) as Record<string, number>;
   const revenueDaily = (data.revenue_daily || []) as { date: string; recharge_revenue: number; membership_revenue: number; gifts_sent: number; ad_views: number }[];
@@ -85,6 +104,39 @@ export function MonetisationSection({ data, economyData, loading, t }: Props) {
         <FunnelChart title={t("membershipFunnel")} steps={membershipFunnel} t={t} />
         <FunnelChart title={t("giftFunnel")} steps={giftFunnel} t={t} />
       </div>
+
+      {/* Membership products */}
+      {membershipProducts.length > 0 && (
+        <section className="mb-8 rounded-xl bg-[var(--card-bg)]" style={{ border: "1px solid var(--card-stroke)", boxShadow: "var(--card-shadow)" }}>
+          <div className="p-4 sm:p-5">
+            <h3 className="text-sm font-semibold">Membership Plans</h3>
+            <div className="mt-3 overflow-x-auto">
+              <table className="w-full min-w-[640px] text-xs">
+                <thead>
+                  <tr className="border-b border-[var(--border)] text-left text-[var(--secondary-text)]">
+                    <th className="px-2 py-2 font-medium">Product ID</th>
+                    <th className="px-2 py-2 font-medium text-right">Plan Price</th>
+                    <th className="px-2 py-2 font-medium text-right">Subscribers</th>
+                    <th className="px-2 py-2 font-medium text-right">Purchases</th>
+                    <th className="px-2 py-2 font-medium text-right">Revenue</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {membershipProducts.map((product) => (
+                    <tr key={`${product.product_id}-${product.currency}-${product.plan_price}`} className="border-b border-[var(--border)] last:border-0">
+                      <td className="px-2 py-2 font-mono font-medium">{product.product_id}</td>
+                      <td className="px-2 py-2 text-right">{formatMoney(product.plan_price, product.currency)}</td>
+                      <td className="px-2 py-2 text-right">{product.subscribers.toLocaleString()}</td>
+                      <td className="px-2 py-2 text-right">{product.purchases.toLocaleString()}</td>
+                      <td className="px-2 py-2 text-right font-semibold">{formatMoney(product.revenue, product.currency)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+      )}
 
       {/* NPC Gift */}
       <section className="mb-8 rounded-xl bg-[var(--card-bg)]" style={{ border: "1px solid var(--card-stroke)", boxShadow: "var(--card-shadow)" }}>
