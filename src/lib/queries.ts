@@ -74,10 +74,25 @@ function paramStr(key: string): string {
 function paramInt(key: string): string {
   return `COALESCE((SELECT value.int_value FROM UNNEST(event_params) WHERE key = '${key}'), 0)`;
 }
-// paramDouble available if needed for float event params
-// function paramDouble(key: string): string {
-//   return `COALESCE((SELECT value.double_value FROM UNNEST(event_params) WHERE key = '${key}'), 0)`;
-// }
+
+function paramNumber(key: string): string {
+  return `COALESCE((SELECT COALESCE(
+    value.double_value,
+    CAST(value.float_value AS FLOAT64),
+    CAST(value.int_value AS FLOAT64),
+    SAFE_CAST(value.string_value AS FLOAT64)
+  ) FROM UNNEST(event_params) WHERE key = '${key}'), 0)`;
+}
+
+function revenueAmount(): string {
+  return `CASE
+    WHEN event_name = 'recharge_result' AND ${paramStr('status')} = 'success'
+      THEN CAST(${paramInt('value')} AS FLOAT64)
+    WHEN event_name = 'membership_success_toast'
+      THEN ${paramNumber('price')}
+    ELSE 0
+  END`;
+}
 
 /* ──────────────────────────────────────────────────────────────
    Filters
@@ -146,8 +161,7 @@ export function getKPIAndWowQuery(mode: "today" | "7d" | "30d", filters?: Overvi
         COUNTIF(event_name = 'chat_session_dispose' AND ${paramInt('message_count')} >= 10) as deep_sessions,
         COUNT(DISTINCT CASE WHEN event_name = 'recharge_result'
           AND ${paramStr('status')} = 'success' THEN user_pseudo_id END) as recharge_payers,
-        COALESCE(SUM(CASE WHEN event_name IN ('recharge_result','membership_success_toast')
-          THEN ${paramInt('value')} END), 0) as revenue,
+        COALESCE(SUM(${revenueAmount()}), 0) as revenue,
         COUNT(DISTINCT CASE WHEN event_name = 'gift_item_purchase' THEN user_pseudo_id END) as gift_users
       FROM \`${dataset()}.${table()}\`
       WHERE ${tableFilterDailyOnly(days)}${extra}
@@ -170,8 +184,7 @@ export function getKPIAndWowQuery(mode: "today" | "7d" | "30d", filters?: Overvi
         COUNTIF(event_name = 'chat_session_dispose' AND ${paramInt('message_count')} >= 10) as deep_sessions,
         COUNT(DISTINCT CASE WHEN event_name = 'recharge_result'
           AND ${paramStr('status')} = 'success' THEN user_pseudo_id END) as recharge_payers,
-        COALESCE(SUM(CASE WHEN event_name IN ('recharge_result','membership_success_toast')
-          THEN ${paramInt('value')} END), 0) as revenue,
+        COALESCE(SUM(${revenueAmount()}), 0) as revenue,
         COUNT(DISTINCT CASE WHEN event_name = 'gift_item_purchase' THEN user_pseudo_id END) as gift_users
       FROM \`${dataset()}.${table()}\`
       WHERE ${tableFilterIntradayOnly(days)}${extra}
@@ -292,8 +305,7 @@ export function getDailyTrendQuery(days: number = 7, filters?: OverviewFilters) 
         COUNT(CASE WHEN event_name = 'chat_session_dispose' THEN 1 END) as disposed_sessions,
         COUNTIF(event_name = 'chat_session_dispose' AND ${paramInt('message_count')} >= 1) as valid_sessions,
         COUNTIF(event_name = 'chat_session_dispose' AND ${paramInt('message_count')} >= 10) as deep_sessions,
-        COALESCE(SUM(CASE WHEN event_name IN ('recharge_result','membership_success_toast')
-          THEN ${paramInt('value')} END), 0) as revenue,
+        COALESCE(SUM(${revenueAmount()}), 0) as revenue,
         COUNT(DISTINCT CASE WHEN event_name = 'gift_item_purchase' THEN user_pseudo_id END) as gift_users
       FROM \`${dataset()}.${table()}\`
       WHERE ${tableFilterDailyOnly(days)}${extra}
@@ -314,8 +326,7 @@ export function getDailyTrendQuery(days: number = 7, filters?: OverviewFilters) 
         COUNT(CASE WHEN event_name = 'chat_session_dispose' THEN 1 END) as disposed_sessions,
         COUNTIF(event_name = 'chat_session_dispose' AND ${paramInt('message_count')} >= 1) as valid_sessions,
         COUNTIF(event_name = 'chat_session_dispose' AND ${paramInt('message_count')} >= 10) as deep_sessions,
-        COALESCE(SUM(CASE WHEN event_name IN ('recharge_result','membership_success_toast')
-          THEN ${paramInt('value')} END), 0) as revenue,
+        COALESCE(SUM(${revenueAmount()}), 0) as revenue,
         COUNT(DISTINCT CASE WHEN event_name = 'gift_item_purchase' THEN user_pseudo_id END) as gift_users
       FROM \`${dataset()}.${table()}\`
       WHERE ${tableFilterIntradayOnly(days)}${extra}
@@ -740,7 +751,7 @@ export function getMonetisationOverviewQuery(days: number = 30) {
       COUNT(DISTINCT CASE WHEN event_name = 'membership_success_toast'
         THEN user_pseudo_id END) as membership_subscribers,
       COALESCE(SUM(CASE WHEN event_name = 'membership_success_toast'
-        THEN ${paramInt('value')} END), 0) as membership_revenue,
+        THEN ${paramNumber('price')} END), 0) as membership_revenue,
       COUNT(DISTINCT CASE WHEN event_name = 'gift_item_purchase'
         THEN user_pseudo_id END) as gift_users,
       COUNT(CASE WHEN event_name = 'gift_item_purchase' THEN 1 END) as gift_count,
@@ -832,7 +843,7 @@ export function getRevenueDailyQuery(days: number = 30) {
       COALESCE(SUM(CASE WHEN event_name = 'recharge_result'
         AND ${paramStr('status')} = 'success' THEN ${paramInt('value')} END), 0) as recharge_revenue,
       COALESCE(SUM(CASE WHEN event_name = 'membership_success_toast'
-        THEN ${paramInt('value')} END), 0) as membership_revenue,
+        THEN ${paramNumber('price')} END), 0) as membership_revenue,
       COUNT(CASE WHEN event_name = 'gift_item_purchase' THEN 1 END) as gifts_sent,
       COUNT(CASE WHEN event_name = 'ad_completion' THEN 1 END) as ad_views
     FROM \`${dataset()}.${table()}\`
@@ -1041,8 +1052,7 @@ export function getHealthDashboardQuery(days: number = 30) {
           NULLIF(COUNT(DISTINCT user_pseudo_id), 0)
         ) as membership_rate,
         -- Revenue
-        COALESCE(SUM(CASE WHEN event_name IN ('recharge_result','membership_success_toast')
-          THEN ${paramInt('value')} END), 0) as total_revenue,
+        COALESCE(SUM(${revenueAmount()}), 0) as total_revenue,
         COUNT(DISTINCT user_pseudo_id) as dau_sum
       FROM \`${dataset()}.${table()}\`
       WHERE ${tableFilter(days)}
