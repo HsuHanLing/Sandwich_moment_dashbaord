@@ -5,11 +5,11 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Responsive
 type FunnelStep = { step: string; label: string; users: number };
 type MembershipProduct = {
   product_id: string;
-  currency: string;
-  plan_price: number;
+  country: string;
+  plan_price_usd: number;
   subscribers: number;
   purchases: number;
-  revenue: number;
+  revenue_usd: number;
 };
 
 type Props = {
@@ -46,11 +46,10 @@ function FunnelChart({ title, steps, t }: { title: string; steps: FunnelStep[]; 
   );
 }
 
-function formatMoney(value: number, currency: string) {
-  const currencyCode = /^[A-Z]{3}$/.test(currency) ? currency : "USD";
+function formatMoney(value: number) {
   return new Intl.NumberFormat(undefined, {
     style: "currency",
-    currency: currencyCode,
+    currency: "USD",
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   }).format(value);
@@ -115,20 +114,22 @@ export function MonetisationSection({ data, economyData, loading, t }: Props) {
                 <thead>
                   <tr className="border-b border-[var(--border)] text-left text-[var(--secondary-text)]">
                     <th className="px-2 py-2 font-medium">Product ID</th>
-                    <th className="px-2 py-2 font-medium text-right">Plan Price</th>
+                    <th className="px-2 py-2 font-medium">Country</th>
+                    <th className="px-2 py-2 font-medium text-right">Plan Price (USD)</th>
                     <th className="px-2 py-2 font-medium text-right">Subscribers</th>
                     <th className="px-2 py-2 font-medium text-right">Purchases</th>
-                    <th className="px-2 py-2 font-medium text-right">Revenue</th>
+                    <th className="px-2 py-2 font-medium text-right">Revenue (USD)</th>
                   </tr>
                 </thead>
                 <tbody>
                   {membershipProducts.map((product) => (
-                    <tr key={`${product.product_id}-${product.currency}-${product.plan_price}`} className="border-b border-[var(--border)] last:border-0">
+                    <tr key={`${product.product_id}-${product.country}-${product.plan_price_usd}`} className="border-b border-[var(--border)] last:border-0">
                       <td className="px-2 py-2 font-mono font-medium">{product.product_id}</td>
-                      <td className="px-2 py-2 text-right">{formatMoney(product.plan_price, product.currency)}</td>
+                      <td className="px-2 py-2">{product.country}</td>
+                      <td className="px-2 py-2 text-right">{formatMoney(product.plan_price_usd)}</td>
                       <td className="px-2 py-2 text-right">{product.subscribers.toLocaleString()}</td>
                       <td className="px-2 py-2 text-right">{product.purchases.toLocaleString()}</td>
-                      <td className="px-2 py-2 text-right font-semibold">{formatMoney(product.revenue, product.currency)}</td>
+                      <td className="px-2 py-2 text-right font-semibold">{formatMoney(product.revenue_usd)}</td>
                     </tr>
                   ))}
                 </tbody>

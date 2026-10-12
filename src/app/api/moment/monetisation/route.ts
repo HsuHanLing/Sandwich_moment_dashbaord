@@ -69,11 +69,11 @@ export async function GET(request: Request) {
       },
       membership_products: (membershipProductRows as Record<string, unknown>[]).map((r) => ({
         product_id: String(r.product_id),
-        currency: String(r.currency),
-        plan_price: Math.round(n(r.plan_price) * 100) / 100,
+        country: String(r.country),
+        plan_price_usd: Math.round(n(r.plan_price_usd) * 100) / 100,
         subscribers: n(r.subscribers),
         purchases: n(r.purchases),
-        revenue: Math.round(n(r.revenue) * 100) / 100,
+        revenue_usd: Math.round(n(r.revenue_usd) * 100) / 100,
       })),
       gift_funnel: [
         { step: "popup_opened", label: "Gift Popup", users: n(gf.popup_opened) },

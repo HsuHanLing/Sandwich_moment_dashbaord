@@ -84,12 +84,32 @@ function paramNumber(key: string): string {
   ) FROM UNNEST(event_params) WHERE key = '${key}'), 0)`;
 }
 
+// Fixed country FX rates to USD. Update these deliberately when finance changes
+// the reporting rate. ZAR rate captured on 2026-10-12: 1 ZAR = 0.060572 USD.
+const USD_RATE_BY_COUNTRY: Record<string, number> = {
+  "South Africa": 0.060572,
+};
+
+function countryUsdRate(): string {
+  const cases = Object.entries(USD_RATE_BY_COUNTRY)
+    .map(([country, rate]) => `WHEN '${country.replaceAll("'", "''")}' THEN ${rate}`)
+    .join("\n      ");
+  return `CASE geo.country
+      ${cases}
+      ELSE 1.0
+    END`;
+}
+
+function rawAmountToUsd(amount: string): string {
+  return `(CAST(${amount} AS FLOAT64) / 100.0) * ${countryUsdRate()}`;
+}
+
 function revenueAmount(): string {
   return `CASE
     WHEN event_name = 'recharge_result' AND ${paramStr('status')} = 'success'
-      THEN CAST(${paramInt('value')} AS FLOAT64)
+      THEN ${rawAmountToUsd(paramNumber('value'))}
     WHEN event_name = 'membership_success_toast'
-      THEN ${paramNumber('plan_price')}
+      THEN ${rawAmountToUsd(paramNumber('plan_price'))}
     ELSE 0
   END`;
 }
@@ -747,11 +767,12 @@ export function getMonetisationOverviewQuery(days: number = 30) {
       COUNT(DISTINCT CASE WHEN event_name = 'recharge_result'
         AND ${paramStr('status')} = 'success' THEN user_pseudo_id END) as recharge_payers,
       COALESCE(SUM(CASE WHEN event_name = 'recharge_result'
-        AND ${paramStr('status')} = 'success' THEN ${paramInt('value')} END), 0) as recharge_revenue,
+        AND ${paramStr('status')} = 'success'
+        THEN ${rawAmountToUsd(paramNumber('value'))} END), 0) as recharge_revenue,
       COUNT(DISTINCT CASE WHEN event_name = 'membership_success_toast'
         THEN user_pseudo_id END) as membership_subscribers,
       COALESCE(SUM(CASE WHEN event_name = 'membership_success_toast'
-        THEN ${paramNumber('plan_price')} END), 0) as membership_revenue,
+        THEN ${rawAmountToUsd(paramNumber('plan_price'))} END), 0) as membership_revenue,
       COUNT(DISTINCT CASE WHEN event_name = 'gift_item_purchase'
         THEN user_pseudo_id END) as gift_users,
       COUNT(CASE WHEN event_name = 'gift_item_purchase' THEN 1 END) as gift_count,
@@ -816,16 +837,16 @@ export function getMembershipProductRevenueQuery(days: number = 30) {
   return `
     SELECT
       COALESCE(NULLIF(${paramStr('product_id')}, ''), '(unknown)') as product_id,
-      COALESCE(NULLIF(${paramStr('currency')}, ''), 'USD') as currency,
-      ${paramNumber('plan_price')} as plan_price,
+      COALESCE(geo.country, '(unknown)') as country,
+      ${rawAmountToUsd(paramNumber('plan_price'))} as plan_price_usd,
       COUNT(DISTINCT user_pseudo_id) as subscribers,
       COUNT(*) as purchases,
-      COALESCE(SUM(${paramNumber('plan_price')}), 0) as revenue
+      COALESCE(SUM(${rawAmountToUsd(paramNumber('plan_price'))}), 0) as revenue_usd
     FROM \`${dataset()}.${table()}\`
     WHERE ${tableFilter(days)}
       AND event_name = 'membership_success_toast'
-    GROUP BY product_id, currency, plan_price
-    ORDER BY revenue DESC, product_id ASC
+    GROUP BY product_id, country, plan_price_usd
+    ORDER BY revenue_usd DESC, product_id ASC
   `;
 }
 
@@ -858,9 +879,10 @@ export function getRevenueDailyQuery(days: number = 30) {
     SELECT
       FORMAT_DATE('%Y-%m-%d', PARSE_DATE('%Y%m%d', event_date)) as date,
       COALESCE(SUM(CASE WHEN event_name = 'recharge_result'
-        AND ${paramStr('status')} = 'success' THEN ${paramInt('value')} END), 0) as recharge_revenue,
+        AND ${paramStr('status')} = 'success'
+        THEN ${rawAmountToUsd(paramNumber('value'))} END), 0) as recharge_revenue,
       COALESCE(SUM(CASE WHEN event_name = 'membership_success_toast'
-        THEN ${paramNumber('plan_price')} END), 0) as membership_revenue,
+        THEN ${rawAmountToUsd(paramNumber('plan_price'))} END), 0) as membership_revenue,
       COUNT(CASE WHEN event_name = 'gift_item_purchase' THEN 1 END) as gifts_sent,
       COUNT(CASE WHEN event_name = 'ad_completion' THEN 1 END) as ad_views
     FROM \`${dataset()}.${table()}\`
