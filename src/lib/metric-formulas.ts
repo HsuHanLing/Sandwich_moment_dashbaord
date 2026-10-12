@@ -73,8 +73,8 @@ export const METRIC_FORMULAS: Record<string, MetricInfo> = {
   },
   REVENUE: {
     name: "Revenue",
-    formula: "SUM((price / 100) × geo.country USD rate) for successful coin/first-pack purchases + memberships",
-    description: "Revenue from coin_purchase_result, first_moment_pack_purchase_result, and membership_success_toast, converted to USD.",
+    formula: "SUM(price × USD rate) for coin/first-pack purchases + SUM((plan_price / 100) × USD rate) for memberships",
+    description: "Only membership_success_toast plan_price uses minor units and is divided by 100 before USD conversion.",
   },
   ARPU: {
     name: "ARPU",

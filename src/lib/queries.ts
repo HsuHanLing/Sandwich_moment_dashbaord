@@ -100,7 +100,11 @@ function countryUsdRate(): string {
     END`;
 }
 
-function rawAmountToUsd(amount: string): string {
+function amountToUsd(amount: string): string {
+  return `CAST(${amount} AS FLOAT64) * ${countryUsdRate()}`;
+}
+
+function minorAmountToUsd(amount: string): string {
   return `(CAST(${amount} AS FLOAT64) / 100.0) * ${countryUsdRate()}`;
 }
 
@@ -112,9 +116,9 @@ function rechargeSuccessCondition(): string {
 function revenueAmount(): string {
   return `CASE
     WHEN ${rechargeSuccessCondition()}
-      THEN ${rawAmountToUsd(paramNumber('price'))}
+      THEN ${amountToUsd(paramNumber('price'))}
     WHEN event_name = 'membership_success_toast'
-      THEN ${rawAmountToUsd(paramNumber('plan_price'))}
+      THEN ${minorAmountToUsd(paramNumber('plan_price'))}
     ELSE 0
   END`;
 }
@@ -772,11 +776,11 @@ export function getMonetisationOverviewQuery(days: number = 30) {
       COUNT(DISTINCT CASE WHEN ${rechargeSuccessCondition()}
         THEN user_pseudo_id END) as recharge_payers,
       COALESCE(SUM(CASE WHEN ${rechargeSuccessCondition()}
-        THEN ${rawAmountToUsd(paramNumber('price'))} END), 0) as recharge_revenue,
+        THEN ${amountToUsd(paramNumber('price'))} END), 0) as recharge_revenue,
       COUNT(DISTINCT CASE WHEN event_name = 'membership_success_toast'
         THEN user_pseudo_id END) as membership_subscribers,
       COALESCE(SUM(CASE WHEN event_name = 'membership_success_toast'
-        THEN ${rawAmountToUsd(paramNumber('plan_price'))} END), 0) as membership_revenue,
+        THEN ${minorAmountToUsd(paramNumber('plan_price'))} END), 0) as membership_revenue,
       COUNT(DISTINCT CASE WHEN event_name = 'gift_item_purchase'
         THEN user_pseudo_id END) as gift_users,
       COUNT(CASE WHEN event_name = 'gift_item_purchase' THEN 1 END) as gift_count,
@@ -842,10 +846,10 @@ export function getMembershipProductRevenueQuery(days: number = 30) {
     SELECT
       COALESCE(NULLIF(${paramStr('product_id')}, ''), '(unknown)') as product_id,
       COALESCE(geo.country, '(unknown)') as country,
-      ${rawAmountToUsd(paramNumber('plan_price'))} as plan_price_usd,
+      ${minorAmountToUsd(paramNumber('plan_price'))} as plan_price_usd,
       COUNT(DISTINCT user_pseudo_id) as subscribers,
       COUNT(*) as purchases,
-      COALESCE(SUM(${rawAmountToUsd(paramNumber('plan_price'))}), 0) as revenue_usd
+      COALESCE(SUM(${minorAmountToUsd(paramNumber('plan_price'))}), 0) as revenue_usd
     FROM \`${dataset()}.${table()}\`
     WHERE ${tableFilter(days)}
       AND event_name = 'membership_success_toast'
@@ -883,9 +887,9 @@ export function getRevenueDailyQuery(days: number = 30) {
     SELECT
       FORMAT_DATE('%Y-%m-%d', PARSE_DATE('%Y%m%d', event_date)) as date,
       COALESCE(SUM(CASE WHEN ${rechargeSuccessCondition()}
-        THEN ${rawAmountToUsd(paramNumber('price'))} END), 0) as recharge_revenue,
+        THEN ${amountToUsd(paramNumber('price'))} END), 0) as recharge_revenue,
       COALESCE(SUM(CASE WHEN event_name = 'membership_success_toast'
-        THEN ${rawAmountToUsd(paramNumber('plan_price'))} END), 0) as membership_revenue,
+        THEN ${minorAmountToUsd(paramNumber('plan_price'))} END), 0) as membership_revenue,
       COUNT(CASE WHEN event_name = 'gift_item_purchase' THEN 1 END) as gifts_sent,
       COUNT(CASE WHEN event_name = 'ad_completion' THEN 1 END) as ad_views
     FROM \`${dataset()}.${table()}\`
