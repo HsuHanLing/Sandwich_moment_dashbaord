@@ -80,7 +80,7 @@ function paramNumber(key: string): string {
     value.double_value,
     CAST(value.float_value AS FLOAT64),
     CAST(value.int_value AS FLOAT64),
-    SAFE_CAST(value.string_value AS FLOAT64)
+    SAFE_CAST(REGEXP_REPLACE(value.string_value, r'[^0-9.-]', '') AS FLOAT64)
   ) FROM UNNEST(event_params) WHERE key = '${key}'), 0)`;
 }
 
@@ -104,10 +104,15 @@ function rawAmountToUsd(amount: string): string {
   return `(CAST(${amount} AS FLOAT64) / 100.0) * ${countryUsdRate()}`;
 }
 
+function rechargeSuccessCondition(): string {
+  return `event_name IN ('coin_purchase_result', 'first_moment_pack_purchase_result')
+    AND ${paramStr('result')} = 'success'`;
+}
+
 function revenueAmount(): string {
   return `CASE
-    WHEN event_name = 'recharge_result' AND ${paramStr('status')} = 'success'
-      THEN ${rawAmountToUsd(paramNumber('value'))}
+    WHEN ${rechargeSuccessCondition()}
+      THEN ${rawAmountToUsd(paramNumber('price'))}
     WHEN event_name = 'membership_success_toast'
       THEN ${rawAmountToUsd(paramNumber('plan_price'))}
     ELSE 0
@@ -179,8 +184,8 @@ export function getKPIAndWowQuery(mode: "today" | "7d" | "30d", filters?: Overvi
         COUNT(CASE WHEN event_name = 'chat_entry_click' THEN 1 END) as total_sessions,
         COUNTIF(event_name = 'chat_session_dispose' AND ${paramInt('message_count')} >= 1) as valid_sessions,
         COUNTIF(event_name = 'chat_session_dispose' AND ${paramInt('message_count')} >= 10) as deep_sessions,
-        COUNT(DISTINCT CASE WHEN event_name = 'recharge_result'
-          AND ${paramStr('status')} = 'success' THEN user_pseudo_id END) as recharge_payers,
+        COUNT(DISTINCT CASE WHEN ${rechargeSuccessCondition()}
+          THEN user_pseudo_id END) as recharge_payers,
         COALESCE(SUM(${revenueAmount()}), 0) as revenue,
         COUNT(DISTINCT CASE WHEN event_name = 'gift_item_purchase' THEN user_pseudo_id END) as gift_users
       FROM \`${dataset()}.${table()}\`
@@ -202,8 +207,8 @@ export function getKPIAndWowQuery(mode: "today" | "7d" | "30d", filters?: Overvi
         COUNT(CASE WHEN event_name = 'chat_entry_click' THEN 1 END) as total_sessions,
         COUNTIF(event_name = 'chat_session_dispose' AND ${paramInt('message_count')} >= 1) as valid_sessions,
         COUNTIF(event_name = 'chat_session_dispose' AND ${paramInt('message_count')} >= 10) as deep_sessions,
-        COUNT(DISTINCT CASE WHEN event_name = 'recharge_result'
-          AND ${paramStr('status')} = 'success' THEN user_pseudo_id END) as recharge_payers,
+        COUNT(DISTINCT CASE WHEN ${rechargeSuccessCondition()}
+          THEN user_pseudo_id END) as recharge_payers,
         COALESCE(SUM(${revenueAmount()}), 0) as revenue,
         COUNT(DISTINCT CASE WHEN event_name = 'gift_item_purchase' THEN user_pseudo_id END) as gift_users
       FROM \`${dataset()}.${table()}\`
@@ -764,11 +769,10 @@ export function getReturningSessionsQuery(days: number = 30) {
 export function getMonetisationOverviewQuery(days: number = 30) {
   return `
     SELECT
-      COUNT(DISTINCT CASE WHEN event_name = 'recharge_result'
-        AND ${paramStr('status')} = 'success' THEN user_pseudo_id END) as recharge_payers,
-      COALESCE(SUM(CASE WHEN event_name = 'recharge_result'
-        AND ${paramStr('status')} = 'success'
-        THEN ${rawAmountToUsd(paramNumber('value'))} END), 0) as recharge_revenue,
+      COUNT(DISTINCT CASE WHEN ${rechargeSuccessCondition()}
+        THEN user_pseudo_id END) as recharge_payers,
+      COALESCE(SUM(CASE WHEN ${rechargeSuccessCondition()}
+        THEN ${rawAmountToUsd(paramNumber('price'))} END), 0) as recharge_revenue,
       COUNT(DISTINCT CASE WHEN event_name = 'membership_success_toast'
         THEN user_pseudo_id END) as membership_subscribers,
       COALESCE(SUM(CASE WHEN event_name = 'membership_success_toast'
@@ -878,16 +882,21 @@ export function getRevenueDailyQuery(days: number = 30) {
   return `
     SELECT
       FORMAT_DATE('%Y-%m-%d', PARSE_DATE('%Y%m%d', event_date)) as date,
-      COALESCE(SUM(CASE WHEN event_name = 'recharge_result'
-        AND ${paramStr('status')} = 'success'
-        THEN ${rawAmountToUsd(paramNumber('value'))} END), 0) as recharge_revenue,
+      COALESCE(SUM(CASE WHEN ${rechargeSuccessCondition()}
+        THEN ${rawAmountToUsd(paramNumber('price'))} END), 0) as recharge_revenue,
       COALESCE(SUM(CASE WHEN event_name = 'membership_success_toast'
         THEN ${rawAmountToUsd(paramNumber('plan_price'))} END), 0) as membership_revenue,
       COUNT(CASE WHEN event_name = 'gift_item_purchase' THEN 1 END) as gifts_sent,
       COUNT(CASE WHEN event_name = 'ad_completion' THEN 1 END) as ad_views
     FROM \`${dataset()}.${table()}\`
     WHERE ${tableFilter(days)}
-      AND event_name IN ('recharge_result','membership_success_toast','gift_item_purchase','ad_completion')
+      AND event_name IN (
+        'coin_purchase_result',
+        'first_moment_pack_purchase_result',
+        'membership_success_toast',
+        'gift_item_purchase',
+        'ad_completion'
+      )
     GROUP BY event_date
     ORDER BY event_date ASC
   `;
@@ -1076,8 +1085,8 @@ export function getHealthDashboardQuery(days: number = 30) {
         ) as image_unlock_rate,
         -- Recharge conversion
         SAFE_DIVIDE(
-          COUNT(DISTINCT CASE WHEN event_name = 'recharge_result'
-            AND ${paramStr('status')} = 'success' THEN user_pseudo_id END),
+          COUNT(DISTINCT CASE WHEN ${rechargeSuccessCondition()}
+            THEN user_pseudo_id END),
           NULLIF(COUNT(DISTINCT user_pseudo_id), 0)
         ) as pay_rate,
         -- Gift rate

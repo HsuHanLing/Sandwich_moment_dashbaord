@@ -73,8 +73,8 @@ export const METRIC_FORMULAS: Record<string, MetricInfo> = {
   },
   REVENUE: {
     name: "Revenue",
-    formula: "SUM((raw amount / 100) × fixed geo.country USD rate) for successful recharges and memberships",
-    description: "Revenue converted to USD after dividing raw event amounts by 100. South Africa uses the fixed ZAR/USD reporting rate.",
+    formula: "SUM((price / 100) × geo.country USD rate) for successful coin/first-pack purchases + memberships",
+    description: "Revenue from coin_purchase_result, first_moment_pack_purchase_result, and membership_success_toast, converted to USD.",
   },
   ARPU: {
     name: "ARPU",
@@ -171,8 +171,8 @@ export const METRIC_FORMULAS: Record<string, MetricInfo> = {
   },
   PAY_RATE: {
     name: "Pay Rate",
-    formula: "COUNT(DISTINCT recharge_result(success) users) / DAU × 100",
-    description: "Percentage of active users who successfully recharged M-Coins.",
+    formula: "COUNT(DISTINCT successful coin/first-pack purchase users) / DAU × 100",
+    description: "Percentage of active users with a successful coin recharge or first Moment pack purchase.",
   },
   RECHARGE_CONVERSION: {
     name: "Recharge Conversion",
