@@ -3,6 +3,8 @@
  * Session-based emotional AI chat application analytics.
  */
 
+import { COUNTRY_EXCHANGE_RATES, DEFAULT_USD_RATE } from "@/lib/exchange-rates";
+
 const dataset = () => process.env.BIGQUERY_DATASET || "analytics_233462855";
 const table = () => process.env.BIGQUERY_TABLE || "events_*";
 
@@ -84,19 +86,13 @@ function paramNumber(key: string): string {
   ) FROM UNNEST(event_params) WHERE key = '${key}'), 0)`;
 }
 
-// Fixed country FX rates to USD. Update these deliberately when finance changes
-// the reporting rate. ZAR rate captured on 2026-10-12: 1 ZAR = 0.060572 USD.
-const USD_RATE_BY_COUNTRY: Record<string, number> = {
-  "South Africa": 0.060572,
-};
-
 function countryUsdRate(): string {
-  const cases = Object.entries(USD_RATE_BY_COUNTRY)
-    .map(([country, rate]) => `WHEN '${country.replaceAll("'", "''")}' THEN ${rate}`)
+  const cases = COUNTRY_EXCHANGE_RATES
+    .map(({ country, usdRate }) => `WHEN '${country.replaceAll("'", "''")}' THEN ${usdRate}`)
     .join("\n      ");
   return `CASE geo.country
       ${cases}
-      ELSE 1.0
+      ELSE ${DEFAULT_USD_RATE}
     END`;
 }
 
