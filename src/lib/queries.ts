@@ -100,21 +100,16 @@ function amountToUsd(amount: string): string {
   return `CAST(${amount} AS FLOAT64) * ${countryUsdRate()}`;
 }
 
-function minorAmountToUsd(amount: string): string {
-  return `(CAST(${amount} AS FLOAT64) / 100.0) * ${countryUsdRate()}`;
-}
-
 function rechargeSuccessCondition(): string {
   return `event_name IN ('coin_purchase_result', 'first_moment_pack_purchase_result')
     AND ${paramStr('result')} = 'success'`;
 }
 
+/** GA4 recharge revenue only. Subscription $ comes from RevenueCat Charts API. */
 function revenueAmount(): string {
   return `CASE
     WHEN ${rechargeSuccessCondition()}
       THEN ${amountToUsd(paramNumber('price'))}
-    WHEN event_name = 'membership_success_toast'
-      THEN ${minorAmountToUsd(paramNumber('plan_price'))}
     ELSE 0
   END`;
 }
@@ -773,10 +768,6 @@ export function getMonetisationOverviewQuery(days: number = 30) {
         THEN user_pseudo_id END) as recharge_payers,
       COALESCE(SUM(CASE WHEN ${rechargeSuccessCondition()}
         THEN ${amountToUsd(paramNumber('price'))} END), 0) as recharge_revenue,
-      COUNT(DISTINCT CASE WHEN event_name = 'membership_success_toast'
-        THEN user_pseudo_id END) as membership_subscribers,
-      COALESCE(SUM(CASE WHEN event_name = 'membership_success_toast'
-        THEN ${minorAmountToUsd(paramNumber('plan_price'))} END), 0) as membership_revenue,
       COUNT(DISTINCT CASE WHEN event_name = 'gift_item_purchase'
         THEN user_pseudo_id END) as gift_users,
       COUNT(CASE WHEN event_name = 'gift_item_purchase' THEN 1 END) as gift_count,
@@ -837,20 +828,19 @@ export function getMembershipFunnelQuery(days: number = 30) {
   `;
 }
 
+/** @deprecated Membership product revenue now comes from RevenueCat Charts API. */
 export function getMembershipProductRevenueQuery(days: number = 30) {
+  void days;
   return `
     SELECT
-      COALESCE(NULLIF(${paramStr('product_id')}, ''), '(unknown)') as product_id,
-      COALESCE(geo.country, '(unknown)') as country,
-      ${minorAmountToUsd(paramNumber('plan_price'))} as plan_price_usd,
-      COUNT(DISTINCT user_pseudo_id) as subscribers,
-      COUNT(*) as purchases,
-      COALESCE(SUM(${minorAmountToUsd(paramNumber('plan_price'))}), 0) as revenue_usd
-    FROM \`${dataset()}.${table()}\`
-    WHERE ${tableFilter(days)}
-      AND event_name = 'membership_success_toast'
-    GROUP BY product_id, country, plan_price_usd
-    ORDER BY revenue_usd DESC, product_id ASC
+      CAST(NULL AS STRING) as product_id,
+      CAST(NULL AS STRING) as country,
+      CAST(0 AS FLOAT64) as plan_price_usd,
+      CAST(0 AS INT64) as subscribers,
+      CAST(0 AS INT64) as purchases,
+      CAST(0 AS FLOAT64) as revenue_usd
+    FROM UNNEST([1]) AS _
+    WHERE FALSE
   `;
 }
 
@@ -884,8 +874,6 @@ export function getRevenueDailyQuery(days: number = 30) {
       FORMAT_DATE('%Y-%m-%d', PARSE_DATE('%Y%m%d', event_date)) as date,
       COALESCE(SUM(CASE WHEN ${rechargeSuccessCondition()}
         THEN ${amountToUsd(paramNumber('price'))} END), 0) as recharge_revenue,
-      COALESCE(SUM(CASE WHEN event_name = 'membership_success_toast'
-        THEN ${minorAmountToUsd(paramNumber('plan_price'))} END), 0) as membership_revenue,
       COUNT(CASE WHEN event_name = 'gift_item_purchase' THEN 1 END) as gifts_sent,
       COUNT(CASE WHEN event_name = 'ad_completion' THEN 1 END) as ad_views
     FROM \`${dataset()}.${table()}\`
@@ -893,7 +881,6 @@ export function getRevenueDailyQuery(days: number = 30) {
       AND event_name IN (
         'coin_purchase_result',
         'first_moment_pack_purchase_result',
-        'membership_success_toast',
         'gift_item_purchase',
         'ad_completion'
       )
@@ -1094,12 +1081,9 @@ export function getHealthDashboardQuery(days: number = 30) {
           COUNT(DISTINCT CASE WHEN event_name = 'gift_item_purchase' THEN user_pseudo_id END),
           NULLIF(COUNT(DISTINCT CASE WHEN event_name = 'message_send' THEN user_pseudo_id END), 0)
         ) as gift_rate,
-        -- Membership rate
-        SAFE_DIVIDE(
-          COUNT(DISTINCT CASE WHEN event_name = 'membership_success_toast' THEN user_pseudo_id END),
-          NULLIF(COUNT(DISTINCT user_pseudo_id), 0)
-        ) as membership_rate,
-        -- Revenue
+        -- Membership rate numerator comes from RevenueCat in the API route
+        CAST(0 AS FLOAT64) as membership_rate,
+        -- Recharge revenue only; subscription $ merged from RevenueCat in the API route
         COALESCE(SUM(${revenueAmount()}), 0) as total_revenue,
         COUNT(DISTINCT user_pseudo_id) as dau_sum
       FROM \`${dataset()}.${table()}\`

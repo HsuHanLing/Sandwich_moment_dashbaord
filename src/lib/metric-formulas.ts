@@ -73,8 +73,8 @@ export const METRIC_FORMULAS: Record<string, MetricInfo> = {
   },
   REVENUE: {
     name: "Revenue",
-    formula: "SUM(price × USD rate) for coin/first-pack purchases + SUM((plan_price / 100) × USD rate) for memberships",
-    description: "Only membership_success_toast plan_price uses minor units and is divided by 100 before USD conversion.",
+    formula: "GA4 recharge (coin/first-pack price × USD rate) + RevenueCat Charts revenue (gross USD, revenue_type=revenue)",
+    description: "Subscription dollars come from RevenueCat Charts API (production only). Recharge still comes from GA4 events.",
   },
   ARPU: {
     name: "ARPU",
@@ -166,8 +166,8 @@ export const METRIC_FORMULAS: Record<string, MetricInfo> = {
   },
   MEMBERSHIP_RATE: {
     name: "Membership Rate",
-    formula: "COUNT(DISTINCT membership_success_toast users) / DAU × 100",
-    description: "Percentage of active users who subscribed to membership.",
+    formula: "RevenueCat actives_new (new paid subscriptions) / GA4 DAU sum × 100",
+    description: "New paid subscriptions from RevenueCat Charts divided by GA4 active-user sum. IDs are not joined across systems.",
   },
   PAY_RATE: {
     name: "Pay Rate",

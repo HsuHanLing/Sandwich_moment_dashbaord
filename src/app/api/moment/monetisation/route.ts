@@ -4,24 +4,44 @@ import {
   getMonetisationOverviewQuery,
   getRechargeFunnelQuery,
   getMembershipFunnelQuery,
-  getMembershipProductRevenueQuery,
   getGiftFunnelQuery,
   getRevenueDailyQuery,
 } from "@/lib/queries";
+import {
+  getDailySubscriptionRevenue,
+  getNewPaidSubscriptionsTotal,
+  getSubscriptionRevenueByProduct,
+  revenueByDateMap,
+} from "@/lib/revenuecat";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const days = Math.min(parseInt(searchParams.get("days") || "30", 10), 90);
+  const rcFilters = {
+    platform: searchParams.get("platform") || undefined,
+    geo: searchParams.get("geo") || undefined,
+  };
   try {
-    const [overviewRows, rechargeRows, membershipRows, membershipProductRows, giftRows, revenueRows] = await Promise.all([
+    const [
+      overviewRows,
+      rechargeRows,
+      membershipRows,
+      giftRows,
+      revenueRows,
+      rcDaily,
+      rcSubscribers,
+      rcProducts,
+    ] = await Promise.all([
       bigquery.query({ query: getMonetisationOverviewQuery(days) }).then(([r]) => r),
       bigquery.query({ query: getRechargeFunnelQuery(days) }).then(([r]) => r),
       bigquery.query({ query: getMembershipFunnelQuery(days) }).then(([r]) => r),
-      bigquery.query({ query: getMembershipProductRevenueQuery(days) }).then(([r]) => r),
       bigquery.query({ query: getGiftFunnelQuery(days) }).then(([r]) => r),
       bigquery.query({ query: getRevenueDailyQuery(days) }).then(([r]) => r),
+      getDailySubscriptionRevenue(days, rcFilters),
+      getNewPaidSubscriptionsTotal(days, rcFilters),
+      getSubscriptionRevenueByProduct(days, rcFilters),
     ]);
     const n = (v: unknown) => Number(v ?? 0);
     const ov = (overviewRows as Record<string, unknown>[])[0] || {};
@@ -29,12 +49,16 @@ export async function GET(request: Request) {
     const mb = (membershipRows as Record<string, unknown>[])[0] || {};
     const gf = (giftRows as Record<string, unknown>[])[0] || {};
 
+    const membershipRevenue =
+      Math.round(rcDaily.reduce((s, r) => s + r.revenue, 0) * 100) / 100;
+    const rcMap = revenueByDateMap(rcDaily);
+
     return NextResponse.json({
       overview: {
         recharge_payers: n(ov.recharge_payers),
         recharge_revenue: Math.round(n(ov.recharge_revenue) * 100) / 100,
-        membership_subscribers: n(ov.membership_subscribers),
-        membership_revenue: Math.round(n(ov.membership_revenue) * 100) / 100,
+        membership_subscribers: rcSubscribers,
+        membership_revenue: membershipRevenue,
         gift_users: n(ov.gift_users),
         gift_count: n(ov.gift_count),
         npc_gift_users: n(ov.npc_gift_users),
@@ -44,7 +68,7 @@ export async function GET(request: Request) {
         ad_charges: n(ov.ad_charges),
         ad_completions: n(ov.ad_completions),
         arpu: n(ov.total_active_users) > 0
-          ? Math.round(((n(ov.recharge_revenue) + n(ov.membership_revenue)) / n(ov.total_active_users)) * 100) / 100
+          ? Math.round(((n(ov.recharge_revenue) + membershipRevenue) / n(ov.total_active_users)) * 100) / 100
           : 0,
       },
       recharge_funnel: [
@@ -67,13 +91,13 @@ export async function GET(request: Request) {
         promo_clicked: n(mb.promo_clicked),
         vip_gate_hits: n(mb.vip_gate_hits),
       },
-      membership_products: (membershipProductRows as Record<string, unknown>[]).map((r) => ({
-        product_id: String(r.product_id),
-        country: String(r.country),
-        plan_price_usd: Math.round(n(r.plan_price_usd) * 100) / 100,
-        subscribers: n(r.subscribers),
-        purchases: n(r.purchases),
-        revenue_usd: Math.round(n(r.revenue_usd) * 100) / 100,
+      membership_products: rcProducts.map((product) => ({
+        product_id: product.product_id,
+        country: "(all)",
+        plan_price_usd: 0,
+        subscribers: 0,
+        purchases: product.purchases,
+        revenue_usd: product.revenue_usd,
       })),
       gift_funnel: [
         { step: "popup_opened", label: "Gift Popup", users: n(gf.popup_opened) },
@@ -86,13 +110,40 @@ export async function GET(request: Request) {
         confirmed: n(gf.npc_confirmed),
         cancelled: n(gf.npc_cancelled),
       },
-      revenue_daily: (revenueRows as Record<string, unknown>[]).map((r) => ({
-        date: String(r.date),
-        recharge_revenue: Math.round(n(r.recharge_revenue) * 100) / 100,
-        membership_revenue: Math.round(n(r.membership_revenue) * 100) / 100,
-        gifts_sent: n(r.gifts_sent),
-        ad_views: n(r.ad_views),
-      })),
+      revenue_daily: (() => {
+        const byDate = new Map<string, {
+          date: string;
+          recharge_revenue: number;
+          membership_revenue: number;
+          gifts_sent: number;
+          ad_views: number;
+        }>();
+        for (const r of revenueRows as Record<string, unknown>[]) {
+          const date = String(r.date);
+          byDate.set(date, {
+            date,
+            recharge_revenue: Math.round(n(r.recharge_revenue) * 100) / 100,
+            membership_revenue: 0,
+            gifts_sent: n(r.gifts_sent),
+            ad_views: n(r.ad_views),
+          });
+        }
+        for (const [date, membership_revenue] of rcMap) {
+          const existing = byDate.get(date);
+          if (existing) {
+            existing.membership_revenue = Math.round(membership_revenue * 100) / 100;
+          } else {
+            byDate.set(date, {
+              date,
+              recharge_revenue: 0,
+              membership_revenue: Math.round(membership_revenue * 100) / 100,
+              gifts_sent: 0,
+              ad_views: 0,
+            });
+          }
+        }
+        return [...byDate.values()].sort((a, b) => a.date.localeCompare(b.date));
+      })(),
     });
   } catch (error) {
     console.error("Monetisation error:", error);

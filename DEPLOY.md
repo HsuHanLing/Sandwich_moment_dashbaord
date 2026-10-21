@@ -37,6 +37,8 @@ git push -u origin main
 | `GOOGLE_CLOUD_PROJECT` | 你的 GCP 项目 ID | 如 `my-project-123` |
 | `BIGQUERY_DATASET` | 数据集名称 | 如 `analytics_233462855` |
 | `BIGQUERY_TABLE` | 表名（可用通配符） | 如 `events_*` |
+| `REVENUECAT_API_KEY` | RevenueCat Secret API Key | 需含 `charts_metrics:charts:read` |
+| `REVENUECAT_PROJECT_ID` | RevenueCat 项目 ID | 如 `proj1ab2c3d4` |
 
 ### 3. BigQuery 服务账号认证
 
@@ -59,8 +61,12 @@ git push -u origin main
 | `BIGQUERY_DATASET` | ✅ | BigQuery 数据集名 |
 | `BIGQUERY_TABLE` | ✅ | BigQuery 表名（如 `events_*`） |
 | `GOOGLE_SERVICE_ACCOUNT` | ✅ | Service Account JSON 完整内容 |
+| `REVENUECAT_API_KEY` | ✅（订阅收入） | RevenueCat Secret API Key |
+| `REVENUECAT_PROJECT_ID` | ✅（订阅收入） | RevenueCat 项目 ID |
 
 **不要**设置 `USE_MOCK_DATA`，留空即使用真实 BigQuery。
+
+订阅金额来自 RevenueCat Charts API（`charts/revenue`，日粒度、USD、gross）。未配置 `REVENUECAT_*` 时面板订阅收入为 0，GA4 行为指标仍正常。
 
 ### 6. 访问密钥（可选但推荐）
 

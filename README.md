@@ -38,7 +38,11 @@ GOOGLE_CLOUD_PROJECT=your-project-id
 BIGQUERY_DATASET=your_dataset
 BIGQUERY_TABLE=your_table
 GOOGLE_APPLICATION_CREDENTIALS=./path/to/service-account.json
+REVENUECAT_API_KEY=sk_xxxxxxxx
+REVENUECAT_PROJECT_ID=projxxxxxxxx
 ```
+
+Subscription revenue uses the RevenueCat Charts API (`charts/revenue`). Without `REVENUECAT_*`, membership revenue shows as `$0`.
 
 4. **Column mapping**: If your table uses different column names, add:
 

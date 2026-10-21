@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { bigquery } from "@/lib/bigquery";
 import { getKPIAndWowQuery } from "@/lib/queries";
+import {
+  getDailySubscriptionRevenue,
+  revenueByDateMap,
+} from "@/lib/revenuecat";
 
 export const dynamic = "force-dynamic";
 
@@ -13,13 +17,28 @@ export async function GET(request: Request) {
     geo: searchParams.get("geo") || undefined,
   };
   try {
-    const [rows] = await bigquery.query({ query: getKPIAndWowQuery(mode, filters) });
+    const days = mode === "today" ? 8 : mode === "7d" ? 14 : 60;
+    const [[rows], rcDaily] = await Promise.all([
+      bigquery.query({ query: getKPIAndWowQuery(mode, filters) }),
+      getDailySubscriptionRevenue(days, {
+        platform: filters.platform,
+        geo: filters.geo,
+      }),
+    ]);
     const data = rows as Record<string, unknown>[];
     if (!data.length) return NextResponse.json({ error: "No data" }, { status: 404 });
 
+    const rcMap = revenueByDateMap(rcDaily);
+    const withRevenue: Record<string, unknown>[] = data.map((r) => {
+      const date = String(r.date_str ?? "");
+      const recharge = Number(r.revenue ?? 0);
+      const sub = rcMap.get(date) ?? 0;
+      return { ...r, revenue: recharge + sub };
+    });
+
     const n = (v: unknown) => Number(v ?? 0);
-    const latest = data[0];
-    const prev = data.length >= 8 ? data[7] : data[data.length - 1];
+    const latest = withRevenue[0]!;
+    const prev = (withRevenue.length >= 8 ? withRevenue[7] : withRevenue[withRevenue.length - 1])!;
 
     const dau = n(latest.dau);
     const totalSessions = n(latest.total_sessions);
@@ -34,7 +53,7 @@ export async function GET(request: Request) {
     const activationRate = guideUsers > 0
       ? Math.round((activatedUsers / guideUsers) * 1000) / 10
       : 0;
-    const revenue = n(latest.revenue);
+    const revenue = Math.round(n(latest.revenue) * 100) / 100;
     const arpu = dau > 0 ? Math.round((revenue / dau) * 100) / 100 : 0;
     const d1Cohort = n(latest.d1_cohort_size);
     const d1Retained = n(latest.retained_d1);
@@ -45,7 +64,7 @@ export async function GET(request: Request) {
     const prevSessionsPerUser = prevDau > 0 ? Math.round((prevSessions / prevDau) * 100) / 100 : 0;
     const prevAvgMsgs = Math.round(n(prev.avg_msgs_per_session) * 10) / 10;
     const prevAvgDuration = Math.round(n(prev.avg_session_duration));
-    const prevRevenue = n(prev.revenue);
+    const prevRevenue = Math.round(n(prev.revenue) * 100) / 100;
     const prevArpu = prevDau > 0 ? Math.round((prevRevenue / prevDau) * 100) / 100 : 0;
     const prevD1Cohort = n(prev.d1_cohort_size);
     const prevD1Retained = n(prev.retained_d1);
@@ -56,7 +75,7 @@ export async function GET(request: Request) {
       ? Math.round((prevActivatedUsers / prevGuideUsers) * 1000) / 10 : 0;
 
     return NextResponse.json({
-      data_range_start: data[data.length - 1]?.date_str || "",
+      data_range_start: withRevenue[withRevenue.length - 1]?.date_str || "",
       data_range_end: latest.date_str || "",
       dau, new_users: n(latest.new_users), chatters: n(latest.chatters),
       sessions_per_user: sessionsPerUser,

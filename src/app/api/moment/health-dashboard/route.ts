@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { bigquery } from "@/lib/bigquery";
 import { getHealthDashboardQuery } from "@/lib/queries";
+import {
+  getNewPaidSubscriptionsTotal,
+  getSubscriptionRevenueTotal,
+} from "@/lib/revenuecat";
 
 export const dynamic = "force-dynamic";
 
@@ -8,9 +12,18 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const days = Math.min(parseInt(searchParams.get("days") || "30", 10), 90);
   try {
-    const [rows] = await bigquery.query({ query: getHealthDashboardQuery(days) });
+    const [[rows], rcSubRevenue, rcNewPaid] = await Promise.all([
+      bigquery.query({ query: getHealthDashboardQuery(days) }),
+      getSubscriptionRevenueTotal(days),
+      getNewPaidSubscriptionsTotal(days),
+    ]);
     const r = (rows as Record<string, unknown>[])[0] || {};
     const pct = (v: unknown) => Math.round(Number(v ?? 0) * 1000) / 10;
+    const dauSum = Number(r.dau_sum ?? 0);
+    const membershipRate = dauSum > 0 ? rcNewPaid / dauSum : 0;
+    const totalRevenue =
+      Math.round((Number(r.total_revenue ?? 0) + rcSubRevenue) * 100) / 100;
+
     const indicators = [
       { id: "activation_rate", label: "Activation Rate", value: pct(r.activation_rate), unit: "%", healthy: 40, warning: 20 },
       { id: "chat_engagement", label: "Chat Engagement", value: pct(r.chat_engagement_rate), unit: "%", healthy: 50, warning: 30 },
@@ -19,15 +32,15 @@ export async function GET(request: Request) {
       { id: "image_unlock", label: "Image Unlock Rate", value: pct(r.image_unlock_rate), unit: "%", healthy: 15, warning: 5 },
       { id: "pay_rate", label: "Pay Rate", value: pct(r.pay_rate), unit: "%", healthy: 3, warning: 1 },
       { id: "gift_rate", label: "Gift Rate", value: pct(r.gift_rate), unit: "%", healthy: 10, warning: 3 },
-      { id: "membership_rate", label: "Membership Rate", value: pct(r.membership_rate), unit: "%", healthy: 2, warning: 0.5 },
+      { id: "membership_rate", label: "Membership Rate", value: pct(membershipRate), unit: "%", healthy: 2, warning: 0.5 },
     ];
     return NextResponse.json({
       indicators: indicators.map((ind) => ({
         ...ind,
         status: ind.value >= ind.healthy ? "healthy" : ind.value >= ind.warning ? "warning" : "danger",
       })),
-      revenue: Math.round(Number(r.total_revenue ?? 0) * 100) / 100,
-      dau_avg: Math.round(Number(r.dau_sum ?? 0) / Math.max(days, 1)),
+      revenue: totalRevenue,
+      dau_avg: Math.round(dauSum / Math.max(days, 1)),
     });
   } catch (error) {
     console.error("Health dashboard error:", error);
