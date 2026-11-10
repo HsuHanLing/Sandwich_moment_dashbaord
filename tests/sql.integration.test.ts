@@ -27,7 +27,7 @@ test("BigQuery executes the full event query, including device/language UNION an
       STRUCT('20261109','20261109','message_send','2026-11-09 11:00:00+00','a','1','success','send-a'),
       STRUCT('20261109','20261109','first_open','2026-11-09 12:00:00+00','b','1',NULL,'open-b'),
       STRUCT('intraday_20261109','20261109','message_send','2026-11-09 13:00:00+00','stale','2','success','stale'),
-      STRUCT('intraday_20261110','20261110','message_send','2026-11-10 10:00:00+00','b','1','success','send-b')
+      STRUCT('intraday_20261110','20261110','message_send','2026-11-10 10:00:00+00','b','1',NULL,'send-b')
     ]) r`;
   const generated = eventQuery(table).replace(`FROM ${identifier(table)}`, "FROM fixture");
   const query = `WITH fixture AS (${fixture}), ${generated.slice("WITH ".length)}`;

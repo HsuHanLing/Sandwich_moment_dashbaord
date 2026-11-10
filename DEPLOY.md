@@ -35,10 +35,12 @@ git push -u origin main
 | 变量名 | 值 | 说明 |
 |--------|-----|------|
 | `GOOGLE_CLOUD_PROJECT` | 你的 GCP 项目 ID | 如 `my-project-123` |
-| `BIGQUERY_DATASET` | 数据集名称 | 如 `analytics_233462855` |
+| `BIGQUERY_DATASET` | 数据集名称 | Moment 为 `analytics_474274728` |
 | `BIGQUERY_TABLE` | 表名（可用通配符） | 如 `events_*` |
 | `REVENUECAT_API_KEY` | RevenueCat Secret API Key | 需含 `charts_metrics:charts:read` |
-| `REVENUECAT_PROJECT_ID` | RevenueCat 项目 ID | 如 `proj1ab2c3d4` |
+| `REVENUECAT_PROJECT_ID` | RevenueCat 项目 ID | Moment 为 `41c7a8a1` |
+| `MOMENT_REVENUECAT_APP_IDS` | 正式 App ID，以逗号分隔 | `appebb7e6d670,app7c2744eaa5` |
+| `MOMENT_REPORT_TIME_ZONE` | GA4 资源实际报表时区 | 未设置会显示 UTC 假设提示；不能随意猜测 |
 
 ### 3. BigQuery 服务账号认证
 
@@ -64,9 +66,15 @@ git push -u origin main
 | `REVENUECAT_API_KEY` | ✅（订阅收入） | RevenueCat Secret API Key |
 | `REVENUECAT_PROJECT_ID` | ✅（订阅收入） | RevenueCat 项目 ID |
 
-**不要**设置 `USE_MOCK_DATA`，留空即使用真实 BigQuery。
+正式环境保持 `MOMENT_DEMO=false`，不要启用示范数据。
 
-订阅金额来自 RevenueCat Charts API（`charts/revenue`，日粒度、USD、gross）。未配置 `REVENUECAT_*` 时面板订阅收入为 0，GA4 行为指标仍正常。
+优先读取已验证交易明细。未接入该明细时，收入和 ARPU 可使用 RevenueCat Charts 的正式内购收入（订阅＋一次性购买，排除广告，USD）；页面标明来源及退款按记账日扣除的口径。Charts 使用 UTC，仅当报表为 UTC 时使用此来源。今日数据保留并标为暂定，不会因 incomplete 而整天消失。
+
+独立 `/api/moment/billing` 会读取完整顾客／交易／订阅明细并逐日与图表对账，恢复按 RC 顾客 ID 去重的 ARPPU、付款人数、初购／续订联集与产品统计。首次可能需要约两分钟，GA4 和收入可先显示。开启 Vercel Fluid compute，路由 `maxDuration=300`；读取限流、30 分钟快照缓存，最多 500 顾客。更多顾客应使用定时交易导出。版本筛选缺少购买时版本时，明细显示不可用，绝不套用 last_seen_app_version。
+
+RC 匿名顾客与 App 安装／帐号尚未映射时，跨来源付费率、订阅比例和充值路径仍待接入。交易次数不能代替人数；旧 RC LTV/ARPPU 图表也不能代替本期收入／本期付费人数。缺少来源显示 `—`，不会填零。
+
+若要读取交易与产品明细，金钥还需相应唯读权限：`customer_information:customers:read`、`customer_information:purchases:read`、`customer_information:subscriptions:read`、`project_configuration:products:read`。这些权限与 `charts_metrics:charts:read` 不同。完整接入与覆盖日期说明见 [analytics integration](docs/analytics-integration.md)。
 
 ### 6. 访问密钥（可选但推荐）
 

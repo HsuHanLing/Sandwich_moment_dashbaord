@@ -1,5 +1,6 @@
 import type { AnalyticsContext } from "./context";
 import { dates, dateInZone, shiftDate } from "./context.ts";
+import type { RevenueCatSource } from "./revenuecat-source";
 
 export type Rollup = {
   date: string; event: string; user_key: string | null; install_key: string | null;
@@ -35,6 +36,7 @@ export type Input = {
   robot_names?: Record<string, string>;
   geo?: { region: string; users: number }[];
   attributes?: { type: string; attribute: string; users: number }[];
+  revenuecat?: RevenueCatSource;
 };
 export const RECHARGE_PAGES = ["coin_store", "coin_topup_modal"];
 export const coverageSteps = [
@@ -78,6 +80,10 @@ function median(values: number[]): number | null {
   const v = [...values].sort((a, b) => a - b); const n = v.length;
   return n ? n % 2 ? v[(n - 1) / 2] : (v[n / 2 - 1] + v[n / 2]) / 2 : null;
 }
+// Legacy message_send is defined as a successful send in the supplied event
+// contract (Sandwitch version Event!C25:F25); result was not a required field.
+// Explicit failure results are still excluded. These are reported App events,
+// not a claim of unique messages verified against the backend.
 function valid(r: Rollup) { return successEvents.has(r.event) ? r.result === "success" : r.event === "message_send" ? r.result === null || r.result === "success" : true; }
 function matches(row: { platform: string; version: string; country: string }, c: AnalyticsContext) {
   return (!c.platform || row.platform === c.platform) && (!c.version || row.version === c.version) && (!c.geo || row.country === c.geo) && !["China", "Hong Kong", "Singapore"].includes(row.country);
@@ -98,7 +104,7 @@ export function buildReport(c: AnalyticsContext, input: Input) {
   const allDayUsers = (date: string) => new Set(input.events.filter(r => r.date === date && r.user_key).map(r => r.user_key!));
   const installs = input.installs.filter(r => inRange(r.date, c));
   const activated = unique(installs.filter(r => r.sent_dates.some(d => inRange(d, c))).map(r => r.install_key));
-  const activationReady = a.events && !events.some(r => r.event === "message_send" && r.result === null);
+  const activationReady = a.events;
   const appSessions = new Map<string, number>();
   for (const r of events) if (r.install_key && r.ga_session_id) {
     const key = `${r.install_key}:${r.ga_session_id}`;
@@ -132,7 +138,8 @@ export function buildReport(c: AnalyticsContext, input: Input) {
     return t.source_page ? "bundle" : "unknown";
   };
   const paymentReady = a.transactions;
-  const revenue = paymentReady ? sum(paid, net) : null;
+  const revenueSource = paymentReady ? "verified_ledger" : input.revenuecat?.status === "ready" ? "revenuecat_chart" : null;
+  const revenue = paymentReady ? sum(paid, net) : input.revenuecat?.revenue ?? null;
   const payers = paymentReady ? unique(paid.map(t => t.user_key)) : null;
   const subs = paid.filter(t => classify(t) === "subscription");
   const subRows = (["weekly", "monthly", "annual"] as const).map(period => {
@@ -165,13 +172,13 @@ export function buildReport(c: AnalyticsContext, input: Input) {
     rows.forEach(r => { if (r.install_key && r.ga_session_id) { const k = `${r.install_key}:${r.ga_session_id}`; duration.set(k, (duration.get(k) || 0) + r.engagement_sec); } });
     return { date, active_users: a.events ? users(undefined, rows) : null, new_users: a.events ? unique(di.map(i => i.install_key)) : null,
       chatters: a.events ? users("message_send", rows) : null, ...behaviours(rows),
-      activation_rate: a.events && !rows.some(r => r.event === "message_send" && r.result === null) ? ratio(unique(di.filter(i => i.sent_dates.includes(date)).map(i => i.install_key)), unique(di.map(i => i.install_key))) : null,
+      activation_rate: activationReady ? ratio(unique(di.filter(i => i.sent_dates.includes(date)).map(i => i.install_key)), unique(di.map(i => i.install_key))) : null,
       avg_messages: a.events ? divide(count("message_send", rows.filter(r => r.user_key !== null)), users("message_send", rows)) : null,
       avg_app_duration: a.events ? divide(sum([...duration.values()], v => v), duration.size) : null,
       dispose_rate: a.conversations ? ratio(ds.filter(s => s.deleted_at && dateInZone(new Date(s.deleted_at), c.timezone) === date).length, ds.length) : null,
       d1_cohort: a.events ? prior.size : null, d1_returned: a.events ? [...prior].filter(u => current.has(u)).length : null,
       d1_retention: a.events ? ratio([...prior].filter(u => current.has(u)).length, prior.size) : null,
-      revenue: paymentReady ? sum(tx, net) : null,
+      revenue: paymentReady ? sum(tx, net) : input.revenuecat?.daily.find(r => r.date === date)?.revenue ?? null,
       recharge_revenue: paymentReady ? sum(tx.filter(t => classify(t) === "recharge"), net) : null,
       bundle_revenue: paymentReady ? sum(tx.filter(t => classify(t) === "bundle"), net) : null,
       subscription_revenue: paymentReady ? sum(tx.filter(t => classify(t) === "subscription"), net) : null,
@@ -193,19 +200,30 @@ export function buildReport(c: AnalyticsContext, input: Input) {
   const reasons = [...a.reasons];
   if (!completeSessions) reasons.push(a.conversations ? `${unknown} conversations have incomplete history` : "Conversation history not connected");
   if (!paymentReady) reasons.push("Verified transaction ledger not connected or coverage incomplete");
+  if (revenueSource === "revenuecat_chart") reasons.push("Revenue and ARPU use RevenueCat IAP Charts (UTC, refunds on the date recorded); unique payers and purchase-page classification still require the transaction ledger");
+  if (input.revenuecat?.reason && input.revenuecat.status !== "ready") reasons.push(input.revenuecat.reason);
+  if (input.revenuecat?.daily.some(r => r.incomplete)) reasons.push("RevenueCat includes provisional current-day data");
   if (!a.products) reasons.push("Product catalog not connected");
   else if (!productReady) reasons.push("Some purchased products or subscription periods are missing from the catalog");
   if (events.some(r => r.event === "message_send" && r.missing_message_ids > 0)) reasons.push("Legacy message events lack unique message IDs; counts are reported telemetry");
-  if (!activationReady && a.events) reasons.push("Legacy message events lack a success result; activation cannot be verified");
+  if (events.some(r => r.event === "message_send" && r.result === null)) reasons.push("Legacy message_send uses the documented successful-send event; no result field was required. Backend message verification remains unavailable");
   if (events.some(r => !r.robot_id && ["message_send", "chat_page_view"].includes(r.event))) reasons.push("Some persona IDs are unmapped");
   if (events.some(r => !r.user_key)) reasons.push("Some event user identities are missing; excluded from per-user averages");
   const missingCapabilities = a.events ? coverageSteps.filter(([e]) => !supported(e)).map(([e]) => e) : [];
   if (missingCapabilities.length) reasons.push(`Unverified result events: ${missingCapabilities.join(", ")}`);
   const amounts = ["recharge", "bundle", "subscription", "unknown"].map(kind => ({ kind, revenue: paymentReady ? sum(paid.filter(t => classify(t) === kind), net) : null }));
   const ledgers = (prefix: string) => events.filter(r => r.event === prefix);
+  const flow = (event: string, field: "battery_delta" | "coin_delta", direction: 1 | -1) => {
+    if (!a.events || !a.verified_events.includes(event)) return null;
+    const rows = ledgers(event);
+    // Missing numeric fields are unknown, never zero-valued ledger entries.
+    if (rows.some(r => r[field] === null || !Number.isFinite(r[field]))) return null;
+    return sum(rows, r => Math.max(direction * r[field]!, 0));
+  };
+  const rewards = ledgers("coins_rewarded");
   return {
     meta: { start: c.start, end: c.end, days: c.days, timezone: c.timezone, filters: { version: c.version, platform: c.platform, geo: c.geo }, updated_at: new Date().toISOString(), demo: a.demo,
-      status: reasons.length ? "partial" : "complete", reasons: [...new Set(reasons)], source_errors: a.errors || [], availability: a,
+      status: reasons.length ? "partial" : "complete", reasons: [...new Set(reasons)], source_errors: a.errors || [], availability: a, revenue_source: revenueSource,
       missing: { user_keys: sum(events.filter(r => !r.user_key), r => r.count), message_ids: sum(events, r => Number(r.missing_message_ids)), event_ids: sum(events, r => Number(r.missing_event_ids)), conversation_history: a.conversations ? unknown : null,
         unmapped_persona_events: sum(events.filter(r => !r.robot_id && ["message_send", "chat_page_view"].includes(r.event)), r => r.count),
         transactions_without_source: paymentReady ? paid.filter(t => !t.source_page).length : null } },
@@ -221,7 +239,7 @@ export function buildReport(c: AnalyticsContext, input: Input) {
       gift_rate: supported("gift_send_result") ? ratio(intersection(chatUsers, eventUsers("gift_send_result")), chatUsers.size) : null,
       activation_rate: activationReady ? ratio(activated, unique(installs.map(i => i.install_key))) : null,
       dispose_rate: a.conversations ? ratio(disposed.length, conversations.length) : null,
-      revenue, payers, arpu: revenue === null ? null : divide(revenue, active), arppu: revenue === null || payers === null ? null : divide(revenue, payers),
+      revenue, payers, arpu: revenue === null || !a.events ? null : divide(revenue, active), arppu: revenue === null || payers === null ? null : divide(revenue, payers),
       pay_rate: payers === null ? null : ratio(payers, active), membership_rate: paymentReady && productReady ? ratio(unique(subs.map(t => t.user_key)), active) : null },
     daily, coverage, behaviour: behaviours(events), personas,
     top_events: [...new Set(events.map(r => r.event))].map(event => ({ event, count: sum(events.filter(r => r.event === event), r => r.count), users: users(event) })).sort((a, b) => b.count - a.count).slice(0, 20),
@@ -231,7 +249,7 @@ export function buildReport(c: AnalyticsContext, input: Input) {
       shallow_rate: sessionRate(n => n >= 1 && n < 5), medium_rate: sessionRate(n => n >= 5 && n < 10), deep_rate: sessionRate(n => n >= 10), valid_rate: sessionRate(n => n >= 1),
       median_messages: completeSessions ? median(sessionRows.map(r => r.messages)) : null,
       distribution: [...Array.from({ length: 11 }, (_, i) => String(i)), ">10"].map(bucket => ({ bucket, session_count: completeSessions ? sessionRows.filter(r => bucket === ">10" ? r.messages > 10 : r.messages === Number(bucket)).length : null })) },
-    payments: { ready: paymentReady, catalog_ready: productReady, amounts, subscriptions: paymentReady && productReady ? subRows : null,
+    payments: { ready: paymentReady, catalog_ready: productReady, revenuecat: input.revenuecat ?? null, amounts, subscriptions: paymentReady && productReady ? subRows : null,
       membership_funnel: [
         ...["membership_enter", "membership_select_plan", "membership_click_purchase"].map((event, i) => ({ step: ["Membership Page", "Plan Selected", "Purchase Clicked"][i], users: a.events ? users(event) : null, conversion: a.events ? ratio(users(event), active) : null })),
         { step: "Subscribed", users: paymentReady && productReady ? unique(subs.map(t => t.user_key)) : null, conversion: paymentReady && productReady ? ratio(unique(subs.map(t => t.user_key)), active) : null },
@@ -242,14 +260,17 @@ export function buildReport(c: AnalyticsContext, input: Input) {
       missing_entry_users: a.verified_events.includes("coin_recharge_page_view") ? unique(pages.filter(p => !entries.some(e => e.flow_id === p.flow_id && e.user_key === p.user_key && e.source_page === p.source_page && Date.parse(e.first_at) <= Date.parse(p.first_at))).map(r => r.user_key)) : null,
       refunded_transactions: paymentReady ? transactions.filter(t => t.status === "refunded").length : null },
     economy: {
-      battery_charged: a.events && a.verified_events.includes("battery_status_change") ? sum(ledgers("battery_status_change"), r => Math.max(r.battery_delta || 0, 0)) : null,
-      battery_consumed: a.events && a.verified_events.includes("battery_status_change") ? sum(ledgers("battery_status_change"), r => Math.max(-(r.battery_delta || 0), 0)) : null,
-      coins_earned: a.events && a.verified_events.includes("coin_balance_change") ? sum(ledgers("coin_balance_change"), r => Math.max(r.coin_delta || 0, 0)) : null,
-      coins_spent: a.events && a.verified_events.includes("coin_balance_change") ? sum(ledgers("coin_balance_change"), r => Math.max(-(r.coin_delta || 0), 0)) : null,
-      ad_completions: a.events && a.verified_events.includes("ad_completion") ? count("ad_completion") : null,
-      ad_forced: a.events && a.verified_events.includes("ad_forced_trigger") ? count("ad_forced_trigger") : null,
+      battery_charged: flow("battery_status_change", "battery_delta", 1),
+      battery_consumed: flow("battery_status_change", "battery_delta", -1),
+      coins_earned: flow("coin_balance_change", "coin_delta", 1),
+      coins_spent: flow("coin_balance_change", "coin_delta", -1),
+      // Legacy reward grants cover one purpose only; do not pass them off as
+      // complete coin inflows or add them to a canonical balance-change ledger.
+      reported_coin_rewards: a.events && rewards.every(r => r.coin_delta !== null && Number.isFinite(r.coin_delta)) ? sum(rewards, r => Math.max(r.coin_delta!, 0)) : null,
+      ad_completions: eventCount("ad_completion"),
+      ad_forced: eventCount("ad_forced_trigger"),
       unlock_attempts: eventCount("image_unlock_attempt"), unlock_successes: eventCount("image_unlock_result"),
-      balance_fails: a.events && a.verified_events.includes("balance_array_fail") ? count("balance_array_fail") : null,
+      balance_fails: eventCount("balance_array_fail"),
     },
   };
 }

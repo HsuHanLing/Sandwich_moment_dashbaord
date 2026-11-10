@@ -46,7 +46,7 @@ export function eventQuery(table: string, identities?: string, aliases?: string)
   ), install_sends AS (
     SELECT f.install_key,ARRAY_AGG(DISTINCT e.date IGNORE NULLS) AS sent_dates
     FROM first_opens f LEFT JOIN events e ON e.install_key=f.install_key AND e.event='message_send'
-      AND e.result='success' AND e.occurred_at>=f.first_at
+      AND (e.result IS NULL OR e.result='success') AND e.occurred_at>=f.first_at
     GROUP BY f.install_key
   )
   SELECT

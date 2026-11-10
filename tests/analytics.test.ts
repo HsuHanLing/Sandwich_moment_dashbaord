@@ -33,9 +33,26 @@ test("missing first_open and zero denominators stay unknown, not fake zero rates
   assert.equal(buildReport(context, input).summary.activation_rate, null);
   assert.equal(change(3, 0), null); assert.equal(change(0, 0), null); assert.equal(change(null, 1), null);
 });
-test("legacy message telemetry without a success result cannot certify activation", () => {
+test("legacy successful-send contract does not require an undocumented result parameter", () => {
   const input = setup(); input.events.find(r => r.event === "message_send")!.result = null;
-  assert.equal(buildReport(context, input).summary.activation_rate, null);
+  const d = buildReport(context, input);
+  assert.equal(d.summary.activation_rate, 100);
+  assert.ok(d.meta.reasons.some(r => r.startsWith("Legacy message_send uses")));
+});
+test("old users without a result parameter never suppress a new-install cohort", () => {
+  const input = setup(); input.installs[0].sent_dates = [];
+  const oldSend = input.events.find(r => r.event === "message_send" && r.user_key === "returning-user")!;
+  oldSend.result = null;
+  const d = buildReport(context, input);
+  assert.equal(d.summary.activation_rate, 0);
+  assert.equal(d.daily[0].activation_rate, 0);
+});
+test("explicit failed sends are excluded from message counts and chatting users", () => {
+  const input = setup(); const send = input.events.find(r => r.event === "message_send")!;
+  input.events.push({ ...send, user_key: "failed-only", install_key: "failed-only", result: "fail", count: 500 });
+  const d = buildReport(context, input);
+  assert.equal(d.summary.messages, 18);
+  assert.equal(d.summary.chatters, 2);
 });
 test("conversation quality uses lifetime totals including messages before the selected start", () => {
   const d = buildReport(context, setup());
@@ -123,6 +140,23 @@ test("success counters reject intent/cancel events and reports count events rath
   input.events.push({ ...r, result: "fail", count: 50 }, { ...r, event: "image_unlock_confirm", count: 100 });
   const d = buildReport(context, input); assert.equal(d.behaviour.unlocks, 1); assert.equal(d.behaviour.reports, 2);
   assert.equal(d.coverage.length, 14); assert.equal(d.coverage[8].users, 1);
+});
+test("documented completion/trigger/failure events do not require a new capability manifest", () => {
+  const input = setup(); input.availability.verified_events = [];
+  const r = input.events[0];
+  input.events.push({ ...r, event: "ad_completion", count: 3 }, { ...r, event: "ad_click_charge", count: 100 }, { ...r, event: "ad_forced_trigger", count: 2 }, { ...r, event: "balance_array_fail", count: 1 });
+  const d = buildReport(context, input);
+  assert.equal(d.economy.ad_completions, 3); assert.equal(d.economy.ad_forced, 2); assert.equal(d.economy.balance_fails, 1);
+});
+test("legacy coin rewards are separate from complete coin flows; missing deltas stay unknown", () => {
+  const input = setup(); const r = input.events[0];
+  input.events.push({ ...r, event: "coins_rewarded", coin_delta: 10 });
+  let d = buildReport(context, input);
+  assert.equal(d.economy.reported_coin_rewards, 10); assert.equal(d.economy.coins_spent, 20); assert.equal(d.economy.coins_earned, 0);
+  input.events.find(r => r.event === "coin_balance_change")!.coin_delta = null;
+  input.events.push({ ...r, event: "coins_rewarded", coin_delta: null });
+  d = buildReport(context, input);
+  assert.equal(d.economy.reported_coin_rewards, null); assert.equal(d.economy.coins_spent, null); assert.equal(d.economy.coins_earned, null);
 });
 test("recharge flow requires matching identity, source, flow and chronological ordering", () => {
   const input = setup(); assert.equal(buildReport(context, input).payments.recharge_funnel[3].users, 1);
