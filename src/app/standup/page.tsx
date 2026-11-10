@@ -2,14 +2,15 @@
 
 import { useEffect, useState, useCallback, useRef } from "react";
 import { createPortal } from "react-dom";
+import Link from "next/link";
 import { useLocale } from "@/contexts/LocaleContext";
 
 /* ── Types ── */
 
 type MomentHealthSnapshot = {
-  indicators: { id: string; label: string; value: number; unit: string; status: string }[];
-  revenue: number;
-  dau_avg: number;
+    indicators: { id: string; label: string; value: number | null; unit: string; status: string }[];
+  revenue: number | null;
+  dau_avg: number | null;
 };
 
 type ActionItem = {
@@ -522,9 +523,9 @@ export default function StandupPage() {
       >
         <div className="mx-auto flex w-full max-w-[1100px] items-center justify-between px-4 py-3 sm:px-8">
           <div className="flex items-center gap-3">
-            <a href="/" className="text-[11px] text-[var(--secondary-text)] hover:text-[var(--accent)]">
+            <Link href="/" className="text-[11px] text-[var(--secondary-text)] hover:text-[var(--accent)]">
               ← Dashboard
-            </a>
+            </Link>
             <span className="text-[var(--border)]">|</span>
             <a href="/ops-daily" className="text-[11px] text-[var(--secondary-text)] hover:text-[var(--accent)]">
               Ops Daily
@@ -610,7 +611,7 @@ export default function StandupPage() {
                   <p className="text-[12px] text-[var(--secondary-text)]">
                     Avg DAU: <span className="font-medium text-[var(--foreground)]">{momentHealth.dau_avg?.toLocaleString() ?? "—"}</span>
                     {" · "}
-                    Revenue: <span className="font-medium text-[var(--foreground)]">${momentHealth.revenue?.toLocaleString() ?? "0"}</span>
+                    Revenue: <span className="font-medium text-[var(--foreground)]">{momentHealth.revenue == null ? "—" : `$${momentHealth.revenue.toFixed(2)}`}</span>
                   </p>
                   <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
                     {momentHealth.indicators.slice(0, 8).map((ind) => (
@@ -621,8 +622,7 @@ export default function StandupPage() {
                       >
                         <div className="text-[10px] font-medium text-[var(--secondary-text)]">{ind.label}</div>
                         <div className="mt-0.5 font-semibold tabular-nums text-[var(--foreground)]">
-                          {ind.value}
-                          {ind.unit}
+                          {ind.value == null ? "—" : `${ind.value.toFixed(1)}${ind.unit}`}
                         </div>
                       </div>
                     ))}

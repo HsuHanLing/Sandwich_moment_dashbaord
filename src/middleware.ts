@@ -3,6 +3,9 @@ import type { NextRequest } from "next/server";
 import { verifyToken, isAuthEnabled, COOKIE_NAME } from "@/lib/auth";
 
 export async function middleware(request: NextRequest) {
+  // Server feeds enforce their own independent bearer secrets, even when the
+  // dashboard's optional cookie login is disabled.
+  if (["/api/moment/ingest", "/api/moment/revenuecat-webhook"].includes(request.nextUrl.pathname)) return NextResponse.next();
   if (!isAuthEnabled()) return NextResponse.next();
 
   const { pathname } = request.nextUrl;
