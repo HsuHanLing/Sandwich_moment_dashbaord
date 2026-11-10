@@ -36,6 +36,7 @@ validated server configuration. Daily source precedence is selected before filte
 
 Metadata contains dates, timezone, applied filters, source availability, update
 time, demo flag, reasons and missing-ID counts. `null` means unavailable, not zero.
+`meta.revenue_source` distinguishes `verified_ledger` from `revenuecat_chart`.
 `meta.source_errors` contains safe source/error codes; the matching server log
 retains the full error. Query failures do not imply that every App event is unverified.
 Sources are cached server-side for 30 seconds by complete context and history
@@ -114,6 +115,22 @@ All recharge events carry the same canonical `user_key` (via identity mapping),
 against the two screenshots with the App owner when wiring the SDK. Other offers
 must have their own explicit page ID. A flow ID starts when entering that flow;
 do not use a mutable subscriber attribute to infer historical purchase provenance.
+
+Legacy `message_send` follows the supplied event specification
+(`Sandwitch version Event!C25:F25`): emit after sending succeeds; `result` was not
+a required parameter. Therefore an absent result is accepted as reported App
+send telemetry for message counts and first_open activation, consistently. An
+explicit non-success result is excluded. This does not verify unique backend
+messages; missing message IDs remain visible. New instrumentation should include
+an explicit success result and unique IDs. Old users' missing result parameters
+must not invalidate an unrelated new-install cohort.
+
+`ad_completion`, `ad_forced_trigger` and `balance_array_fail` are documented
+event counts, independent of the capability manifest for newly added result
+events. `coins_rewarded` is the documented legacy reward grant, not
+`coin_balance_change`. Its reported delta is shown separately; it cannot stand
+in for complete inflows/spending across every wallet purpose. Missing numeric
+ledger fields remain unknown rather than becoming zero.
 
 `image_unlock_confirm`, `gift_item_click` and old NPC confirmation clicks remain
 intent events; they are not promoted to success. `user_message_send`,
@@ -206,6 +223,52 @@ coverage. Historical purchases absent from the inbox require store/RC exports.
 
 Official field reference:
 https://www.revenuecat.com/docs/integrations/webhooks/event-types-and-fields
+
+### RevenueCat Charts while the ledger is pending
+
+`REVENUECAT_API_KEY` and `REVENUECAT_PROJECT_ID` activate a read-only Charts source
+for total/daily IAP revenue and ARPU when the complete ledger is unavailable.
+`MOMENT_REVENUECAT_APP_IDS` optionally restricts the native Apps. The source
+discovers chart options, applies country exclusions, store, version, App and
+purchase-channel filters, and rejects unsupported filters/timezones. It excludes
+ads, uses RevenueCat's USD values, and never adds GA4 payment telemetry to RC.
+Charts use production data and UTC buckets; current-day data remains provisional.
+
+This is **not** the ledger accounting basis: Charts deducts refunds when recorded,
+whereas the ledger uses a transaction's effective state by period end and
+attributes the net amount to its original purchase date. Cards explicitly name
+the source; comparisons across those two bases are unavailable. When a complete
+ledger becomes available it wins, with no addition of Charts revenue. An arbitrary
+GA4 reporting timezone requires transaction timestamps; UTC chart buckets are
+never relabelled or combined with another timezone's active-user counts.
+
+Charts transaction counts do not supply distinct paying user IDs, purchase-page
+provenance, or initial/renewal user unions. The separate `/api/moment/billing`
+endpoint reads all customer/product/purchase/subscription pages and reconciles
+positive, deduplicated store transactions against each filtered Chart day. It
+supplies RC-customer ARPPU, distinct payers, initial/renewal user unions, product
+counts and subscription/unclassified revenue. It returns aggregates only, never
+raw customer/transaction IDs. Missing product periods are not inferred from SKUs.
+
+The first complete sweep can take about two minutes. It is isolated from GA4 and
+fast revenue queries, bounded to 500 customers, throttled below 480 requests/min,
+with four workers, a 250-second deadline, a shared in-flight request and 30-minute
+per-instance snapshot cache. Larger projects require scheduled ledger exports;
+no partial/truncated customer list can produce billing metrics. HTTP errors,
+conflicting owners, refunds or date-level reconciliation mismatches fail closed.
+Purchase-time App version is absent from these API resources: version-filtered
+billing details remain unavailable rather than using current customer metadata.
+
+RC customer identities are not yet mapped to App install/account identities, so
+canonical payer/active-user ratios and recharge flow matching remain unavailable.
+Period tables show RC customer counts and leave the cross-source conversion
+column unknown. Customer API states are a current read snapshot, not a complete
+historical refund state ledger. RC LTV charts are cohort metrics and cannot
+replace these period metrics. Source failures/missing daily values remain unknown; genuine zero and
+provisional current-day zero remain numeric with status metadata.
+
+References: https://www.revenuecat.com/docs/dashboard-and-metrics/charts and
+https://www.revenuecat.com/docs/api-v2/charts-and-metrics.
 
 ## Acceptance / rollout
 

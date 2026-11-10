@@ -5,6 +5,7 @@ import { eventQuery, conversationQuery, transactionQuery, identifier, queryParam
 import robotNames from "./robot-names.json";
 import { demoInput } from "./demo";
 import { needsDefaultProject, resolveEventsTable, sourceFailure } from "./config";
+import { loadRevenueCat } from "./revenuecat-source";
 
 function covers(prefix: string, c: AnalyticsContext): boolean {
   const from = process.env[`${prefix}_COMPLETE_FROM`]; const through = process.env[`${prefix}_COMPLETE_THROUGH`];
@@ -43,6 +44,7 @@ async function load(c: AnalyticsContext, historyDays: number) {
       input.products = await query<Product>(`SELECT store,product_id,kind,period FROM ${identifier(table)} QUALIFY ROW_NUMBER() OVER(PARTITION BY store,product_id ORDER BY ingested_at DESC)=1`); a.products = true;
     }),
   ]);
+  if (!a.transactions && process.env.REVENUECAT_API_KEY) input.revenuecat = await loadRevenueCat(c);
   return buildReport(c, input);
 }
 
