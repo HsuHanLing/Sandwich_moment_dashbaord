@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback, useRef } from "react";
+import Link from "next/link";
 
 /* ── Types ── */
 
@@ -368,7 +369,7 @@ export default function OpsDailyPage() {
       <header className="sticky top-0 z-10 border-b border-[var(--border)] bg-[var(--card-bg)]/95 backdrop-blur-xl" style={cardStyle}>
         <div className="mx-auto flex w-full max-w-[1100px] items-center justify-between px-4 py-3 sm:px-8">
           <div className="flex items-center gap-3">
-            <a href="/" className="text-[11px] text-[var(--secondary-text)] hover:text-[var(--accent)]">← Dashboard</a>
+            <Link href="/" className="text-[11px] text-[var(--secondary-text)] hover:text-[var(--accent)]">← Dashboard</Link>
             <span className="text-[var(--border)]">|</span>
             <a href="/standup" className="text-[11px] text-[var(--secondary-text)] hover:text-[var(--accent)]">Standup</a>
             <h1 className="text-base font-semibold tracking-tight">User Ops Daily</h1>

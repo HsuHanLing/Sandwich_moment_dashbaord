@@ -1,79 +1,36 @@
-# Marketing Dashboard
+# Moment Analytics Dashboard
 
-A Next.js dashboard for your marketing team, powered by Google BigQuery.
+Next.js dashboard for Moment's GA4 activity, conversation quality and verified in-app purchases.
 
-## Features
+## Run locally
 
-- **Overview metrics**: Total spend, impressions, clicks, conversions, revenue
-- **Spend trends**: Time-series chart of ad spend
-- **Channel performance**: Spend by channel (Google Ads, Meta, LinkedIn, etc.)
-- **Top campaigns**: Table of campaigns by spend
-- **Date range filter**: 7, 14, 30, or 90 days
+Use Node 22.17 or newer, then `npm ci`.
+Copy `.env.example` to `.env.local` and configure the GA4 property timezone and data sources.
+For an explicitly labeled synthetic preview, set `MOMENT_DEMO=true`.
 
-## Quick Start
-
-### 1. Install dependencies
-
-```bash
-npm install
 ```
-
-### 2. Run with mock data (no BigQuery)
-
-```bash
-# .env.local already has USE_MOCK_DATA=true
 npm run dev
+npm test
+npm run lint
+npm run build
 ```
 
-Open [http://localhost:3000](http://localhost:3000).
+The KPI, trend and health sections have independent date controls. Analytics v2
+uses exact date windows, new-install activation, lifetime conversation counts as
+of period end, verified transaction deduplication, and separate initial/renewal
+subscription users. Missing authoritative data is shown as unavailable, never zero.
 
-### 3. Connect to BigQuery
+## Connect real data
 
-1. Copy `.env.local.example` to `.env.local` (or edit `.env.local`)
-2. Remove or set `USE_MOCK_DATA=false`
-3. Add your BigQuery credentials:
+Read [the integration and rollout guide](docs/analytics-integration.md) for source
+schemas, App instrumentation, identity mappings, server feed authentication,
+RevenueCat reconciliation, coverage watermarks and acceptance checks.
 
-```
-GOOGLE_CLOUD_PROJECT=your-project-id
-BIGQUERY_DATASET=your_dataset
-BIGQUERY_TABLE=your_table
-GOOGLE_APPLICATION_CREDENTIALS=./path/to/service-account.json
-REVENUECAT_API_KEY=sk_xxxxxxxx
-REVENUECAT_PROJECT_ID=projxxxxxxxx
-```
+[Derived BigQuery schemas](sql/analytics-schema.sql) are provided for review and
+have not been executed against production. The mobile App/backend code and
+production receipt exports are not included in this repository.
 
-Subscription revenue uses the RevenueCat Charts API (`charts/revenue`). Without `REVENUECAT_*`, membership revenue shows as `$0`.
-
-4. **Column mapping**: If your table uses different column names, add:
-
-```
-DATE_COLUMN=event_date
-CHANNEL_COLUMN=source
-CAMPAIGN_COLUMN=campaign_name
-```
-
-5. Update `src/lib/queries.ts` so the SQL matches your schema (spend/cost, revenue/value, etc.)
-
-## What I need from you
-
-To fully connect your BigQuery data:
-
-1. **Project ID** – Your GCP project ID
-2. **Dataset name** – e.g. `marketing_data`
-3. **Table name** – e.g. `campaign_performance`
-4. **Schema** – Column names for:
-   - Date (e.g. `date`, `event_date`, `created_at`)
-   - Spend/cost (e.g. `spend`, `cost`, `ad_spend`)
-   - Impressions, clicks, conversions, revenue
-   - Channel (e.g. `channel`, `source`, `medium`)
-   - Campaign (e.g. `campaign`, `campaign_name`)
-
-Share these and we can tailor the queries to your schema.
-
-## Tech stack
-
-- Next.js 16 (App Router)
-- TypeScript
-- Tailwind CSS
-- Recharts
-- @google-cloud/bigquery
+New clients use the existing `/api/moment/*` paths with `schema=2`, or the unified
+`/api/moment/analytics` endpoint. v1 adapters retain existing route paths with
+nullable values and data-quality metadata. RevenueCat chart totals are no longer
+mixed with GA4 telemetry to derive verified purchase revenue.

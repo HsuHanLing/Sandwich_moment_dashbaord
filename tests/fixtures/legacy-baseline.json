@@ -1,0 +1,12 @@
+{
+  "source": "2026-11-09 read-only audit of events_20261029/events_20261030; country exclusions China, Hong Kong, Singapore. These are aggregate snapshots, not a new live query.",
+  "days": [
+    { "date": "2026-10-29", "dau": 10, "messages": 361, "chatters": 1, "message_counts": [361] },
+    { "date": "2026-10-30", "dau": 12, "messages": 243, "chatters": 4, "message_counts": [229, 9, 3, 2] }
+  ],
+  "legacy_payments": [
+    { "raw_price": 3.99, "geo_fx_rate": 1.120286256 },
+    { "raw_price": 18.99, "geo_fx_rate": 0.0605554766 }
+  ],
+  "note": "Geo-based conversion reproduces the old 5.62 display only; it is not verified settled revenue. User identifiers are synthetic in tests."
+}

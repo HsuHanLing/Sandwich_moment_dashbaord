@@ -6,7 +6,10 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test": "node --experimental-strip-types --test tests/*.test.ts",
+    "import:analytics": "node --experimental-strip-types --env-file-if-exists=.env.local scripts/import-analytics.ts",
+    "reconcile:revenuecat": "node --experimental-strip-types scripts/reconcile-revenuecat.ts"
   },
   "dependencies": {
     "@google-cloud/bigquery": "^8.1.1",
