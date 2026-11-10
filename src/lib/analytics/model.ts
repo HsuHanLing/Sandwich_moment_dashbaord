@@ -27,6 +27,7 @@ export type Product = { store: string; product_id: string; kind: "subscription" 
 export type Availability = {
   events: boolean; conversations: boolean; transactions: boolean; products: boolean;
   reasons: string[]; verified_events: string[]; demo: boolean;
+  errors?: { source: string; code: string; message: string }[];
 };
 export type Input = {
   events: Rollup[]; installs: Install[]; conversations: Conversation[];
@@ -198,13 +199,13 @@ export function buildReport(c: AnalyticsContext, input: Input) {
   if (!activationReady && a.events) reasons.push("Legacy message events lack a success result; activation cannot be verified");
   if (events.some(r => !r.robot_id && ["message_send", "chat_page_view"].includes(r.event))) reasons.push("Some persona IDs are unmapped");
   if (events.some(r => !r.user_key)) reasons.push("Some event user identities are missing; excluded from per-user averages");
-  const missingCapabilities = coverageSteps.filter(([e]) => !supported(e)).map(([e]) => e);
+  const missingCapabilities = a.events ? coverageSteps.filter(([e]) => !supported(e)).map(([e]) => e) : [];
   if (missingCapabilities.length) reasons.push(`Unverified result events: ${missingCapabilities.join(", ")}`);
   const amounts = ["recharge", "bundle", "subscription", "unknown"].map(kind => ({ kind, revenue: paymentReady ? sum(paid.filter(t => classify(t) === kind), net) : null }));
   const ledgers = (prefix: string) => events.filter(r => r.event === prefix);
   return {
     meta: { start: c.start, end: c.end, days: c.days, timezone: c.timezone, filters: { version: c.version, platform: c.platform, geo: c.geo }, updated_at: new Date().toISOString(), demo: a.demo,
-      status: reasons.length ? "partial" : "complete", reasons: [...new Set(reasons)], availability: a,
+      status: reasons.length ? "partial" : "complete", reasons: [...new Set(reasons)], source_errors: a.errors || [], availability: a,
       missing: { user_keys: sum(events.filter(r => !r.user_key), r => r.count), message_ids: sum(events, r => Number(r.missing_message_ids)), event_ids: sum(events, r => Number(r.missing_event_ids)), conversation_history: a.conversations ? unknown : null,
         unmapped_persona_events: sum(events.filter(r => !r.robot_id && ["message_send", "chat_page_view"].includes(r.event)), r => r.count),
         transactions_without_source: paymentReady ? paid.filter(t => !t.source_page).length : null } },
