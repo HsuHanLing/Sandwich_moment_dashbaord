@@ -99,7 +99,10 @@ function Panel({ title, endpoint, initialDays, filters, zh, children, compare = 
           membership_rate: state.data.summary.active_users ? billing.data.subscription_users / state.data.summary.active_users * 100 : null },
         daily: state.data.daily.map(r => ({ ...r, revenue: billing.data!.daily.find(day => day.date === r.date)?.revenue ?? r.revenue })),
         payments: { ...state.data.payments,
-          membership_funnel: state.data.payments.membership_funnel.map(row => row.step === "Subscribed" ? { ...row, users: billing.data!.subscription_users, conversion: state.data.summary.active_users ? billing.data!.subscription_users / state.data.summary.active_users * 100 : null } : row),
+          membership_funnel: state.data.payments.membership_funnel.map(row => {
+            const active = state.data?.summary.active_users;
+            return row.step === "Subscribed" && billing.data ? { ...row, users: billing.data.subscription_users, conversion: active ? billing.data.subscription_users / active * 100 : null } : row;
+          }),
           revenuecat: state.data.payments.revenuecat ? { ...state.data.payments.revenuecat, revenue: billing.data.revenue, daily: billing.data.daily } : null },
       } : state.data)}</>}
   </section>;
