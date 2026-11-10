@@ -158,7 +158,7 @@ export function buildReport(c: AnalyticsContext, input: Input) {
       revenue: sum(rows, net) };
   });
   const behaviours = (rows: Rollup[]) => ({
-    gifts: eventCount("gift_send_result", rows), unlocks: eventCount("image_unlock_result", rows),
+    gifts: eventCount("gift_send_result", rows), unlocks: eventCount("image_unlock_confirm", rows),
     chat_views: eventCount("chat_page_view", rows), messages: eventCount("message_send", rows),
     profile_views: eventCount("virtual_profile_entry", rows), swipes: eventCount("profile_swipe_photo", rows),
     reports: a.events ? sum(rows.filter(r => r.event === "profile_report_action" && r.action === "report"), r => r.count) : null,
@@ -175,6 +175,7 @@ export function buildReport(c: AnalyticsContext, input: Input) {
       activation_rate: activationReady ? ratio(unique(di.filter(i => i.sent_dates.includes(date)).map(i => i.install_key)), unique(di.map(i => i.install_key))) : null,
       avg_messages: a.events ? divide(count("message_send", rows.filter(r => r.user_key !== null)), users("message_send", rows)) : null,
       avg_app_duration: a.events ? divide(sum([...duration.values()], v => v), duration.size) : null,
+      deletions: a.events ? sum(rows.filter(r => r.event === "chat_session_dispose"), r => Number(r.count)) : null,
       dispose_rate: a.conversations ? ratio(ds.filter(s => s.deleted_at && dateInZone(new Date(s.deleted_at), c.timezone) === date).length, ds.length) : null,
       d1_cohort: a.events ? prior.size : null, d1_returned: a.events ? [...prior].filter(u => current.has(u)).length : null,
       d1_retention: a.events ? ratio([...prior].filter(u => current.has(u)).length, prior.size) : null,
@@ -235,9 +236,10 @@ export function buildReport(c: AnalyticsContext, input: Input) {
       d1_retention: a.events ? ratio(sum(daily, r => r.d1_returned || 0), sum(daily, r => r.d1_cohort || 0)) : null,
       chat_engagement: a.events ? ratio(chatUsers.size, active) : null,
       persona_to_chat: a.events ? ratio(intersection(exposedUsers, eventUsers("chat_page_view")), exposedUsers.size) : null,
-      image_unlock_rate: supported("image_unlock_result") ? ratio(intersection(chatUsers, eventUsers("image_unlock_result")), chatUsers.size) : null,
+      image_unlock_rate: supported("image_unlock_confirm") ? ratio(intersection(chatUsers, eventUsers("image_unlock_confirm")), chatUsers.size) : null,
       gift_rate: supported("gift_send_result") ? ratio(intersection(chatUsers, eventUsers("gift_send_result")), chatUsers.size) : null,
       activation_rate: activationReady ? ratio(activated, unique(installs.map(i => i.install_key))) : null,
+      deletions: a.events ? sum(events.filter(r => r.event === "chat_session_dispose"), r => Number(r.count)) : null,
       dispose_rate: a.conversations ? ratio(disposed.length, conversations.length) : null,
       revenue, payers, arpu: revenue === null || !a.events ? null : divide(revenue, active), arppu: revenue === null || payers === null ? null : divide(revenue, payers),
       pay_rate: payers === null ? null : ratio(payers, active), membership_rate: paymentReady && productReady ? ratio(unique(subs.map(t => t.user_key)), active) : null },

@@ -138,8 +138,30 @@ test("missing user keys do not inflate per-chatter averages", () => {
 test("success counters reject intent/cancel events and reports count events rather than users", () => {
   const input = setup(); const r = input.events.find(r => r.event === "image_unlock_result")!;
   input.events.push({ ...r, result: "fail", count: 50 }, { ...r, event: "image_unlock_confirm", count: 100 });
-  const d = buildReport(context, input); assert.equal(d.behaviour.unlocks, 1); assert.equal(d.behaviour.reports, 2);
+  const d = buildReport(context, input); assert.equal(d.economy.unlock_successes, 1); assert.equal(d.behaviour.unlocks, 100); assert.equal(d.behaviour.reports, 2);
   assert.equal(d.coverage.length, 14); assert.equal(d.coverage[8].users, 1);
+});
+test("conversation deletions count chat_session_dispose events without a connected history", () => {
+  const input = setup();
+  input.availability.conversations = false;
+  input.availability.verified_events = input.availability.verified_events.filter(e => e !== "chat_session_dispose");
+  const r = input.events[0];
+  input.events.push({ ...r, event: "chat_session_dispose", result: null, count: 3 }, { ...r, event: "chat_session_dispose", result: "fail", count: 2 });
+  const d = buildReport(context, input);
+  assert.equal(d.summary.deletions, 5);
+  assert.equal(d.summary.dispose_rate, null);
+  assert.equal(d.daily.find(row => row.date === r.date)?.deletions, 5);
+});
+test("image unlock rate counts confirms; gift delivery stays on the unverified result", () => {
+  const input = setup();
+  input.availability.verified_events = input.availability.verified_events.filter(e => e !== "image_unlock_result" && e !== "gift_send_result");
+  const r = input.events.find(e => e.event === "image_unlock_result")!;
+  input.events.push({ ...r, event: "image_unlock_confirm", result: null, count: 4 });
+  const d = buildReport(context, input);
+  assert.equal(d.summary.image_unlock_rate, 50);
+  assert.equal(d.behaviour.unlocks, 4);
+  assert.equal(d.economy.unlock_successes, null);
+  assert.equal(d.summary.gift_rate, null);
 });
 test("documented completion/trigger/failure events do not require a new capability manifest", () => {
   const input = setup(); input.availability.verified_events = [];
