@@ -6,6 +6,7 @@ export type Rollup = {
   date: string; event: string; user_key: string | null; install_key: string | null;
   robot_id: string | null; conversation_id: string | null; ga_session_id: string | null;
   result: string | null; action: string | null; flow_id: string | null; source_page: string | null;
+  product_id?: string | null; price?: number | null; currency?: string | null;
   count: number; engagement_sec: number; battery_delta: number | null; coin_delta: number | null;
   missing_message_ids: number; missing_event_ids: number; first_at: string; last_at: string;
 };
@@ -95,7 +96,7 @@ export function buildReport(c: AnalyticsContext, input: Input) {
   const events = input.events.filter(r => inRange(r.date, c));
   const users = (event?: string, rows = events) => unique(rows.filter(r => (!event || r.event === event) && valid(r)).map(r => r.user_key));
   const count = (event: string, rows = events) => sum(rows.filter(r => r.event === event && valid(r)), r => Number(r.count));
-  const supported = (event: string) => a.events && (a.verified_events.includes(event) || (!successEvents.has(event) && event !== "gift_send_click"));
+  const supported = (event: string) => a.events && (a.verified_events.includes(event) || event === "gift_send_result" || (!successEvents.has(event) && event !== "gift_send_click"));
   const eventCount = (event: string, rows = events) => supported(event) ? count(event, rows) : null;
   const active = users();
   const eventUsers = (event: string) => new Set(events.filter(r => r.event === event && valid(r) && r.user_key).map(r => r.user_key!));
@@ -190,14 +191,16 @@ export function buildReport(c: AnalyticsContext, input: Input) {
     const rows = events.filter(r => r.robot_id === robot_id);
     return { robot_id, name: input.robot_names?.[robot_id] || robot_id, users: users(undefined, rows), ...behaviours(rows) };
   });
-  const pages = events.filter(r => r.event === "coin_recharge_page_view" && r.flow_id && r.user_key && r.source_page && RECHARGE_PAGES.includes(r.source_page));
-  const ordered = (event: string, after: Rollup) => events.find(r => r.event === event && r.flow_id === after.flow_id && r.user_key === after.user_key && Date.parse(r.first_at) >= Date.parse(after.first_at) && r.source_page === after.source_page);
-  const entries = events.filter(r => r.event === "click_mcoin_topup_entry" && r.flow_id && r.user_key && r.source_page && RECHARGE_PAGES.includes(r.source_page));
-  const flowed = entries.flatMap(entry => { const page = ordered("coin_recharge_page_view", entry); if (!page) return []; const option = ordered("recharge_option_click", page); return [{ entry, page, option }]; });
-  const successUsers = paid.filter(t => classify(t) === "recharge" && flowed.some(f => f.option && f.option.flow_id === t.flow_id && f.option.user_key === t.user_key && f.option.source_page === t.source_page && Date.parse(f.option.first_at) <= Date.parse(t.purchased_at))).map(t => t.user_key);
-  const funnelReady = paymentReady && ["coin_recharge_page_view", "recharge_option_click", "click_mcoin_topup_entry"].every(e => a.verified_events.includes(e));
-  const rechargeFunnel = [unique(entries.map(e => e.user_key)), unique(flowed.map(f => f.page.user_key)), unique(flowed.filter(f => f.option).map(f => f.option!.user_key)), unique(successUsers)]
-    .map((users, i, all) => ({ step: ["Top-up Entry", "Recharge Page", "Option Selected", "Purchase Success"][i], users: funnelReady ? users : null, conversion: funnelReady ? ratio(users, all[0]) : null }));
+  const stepUsers = (event: string, successOnly = false) => a.events ? unique(events.filter(r => r.event === event && (!successOnly || r.result === "success")).map(r => r.user_key)) : null;
+  const rechargeFunnel = [
+    ["click_mcoin_topup_entry", "Top-up Entry", false],
+    ["coin_recharge_page_view", "Recharge Page", false],
+    ["recharge_option_click", "Option Selected", false],
+    ["coin_purchase_result", "Purchase Success", true],
+  ].map(([event, step, successOnly]) => {
+    const users = stepUsers(String(event), Boolean(successOnly));
+    return { step: String(step), users, conversion: users === null ? null : ratio(users, active) };
+  });
   const reasons = [...a.reasons];
   if (!completeSessions) reasons.push(a.conversations ? `${unknown} conversations have incomplete history` : "Conversation history not connected");
   if (!paymentReady) reasons.push("Verified transaction ledger not connected or coverage incomplete");
@@ -212,7 +215,21 @@ export function buildReport(c: AnalyticsContext, input: Input) {
   if (events.some(r => !r.user_key)) reasons.push("Some event user identities are missing; excluded from per-user averages");
   const missingCapabilities = a.events ? coverageSteps.filter(([e]) => !supported(e)).map(([e]) => e) : [];
   if (missingCapabilities.length) reasons.push(`Unverified result events: ${missingCapabilities.join(", ")}`);
-  const amounts = ["recharge", "bundle", "subscription", "unknown"].map(kind => ({ kind, revenue: paymentReady ? sum(paid.filter(t => classify(t) === kind), net) : null }));
+  const purchases = events.filter(r => r.event === "coin_purchase_result" && r.result === "success");
+  const usdPrice = (r: Rollup) => {
+    if (r.price == null || !Number.isFinite(r.price)) return null;
+    const currency = (r.currency || "").toUpperCase();
+    // This event stores a country code (US, CN) in `currency`; the price text is already a USD amount.
+    return currency === "" || currency === "USD" || /^[A-Z]{2}$/.test(currency) ? r.price : null;
+  };
+  const purchaseRevenue = (rows: Rollup[]) => {
+    if (!a.events) return null;
+    if (rows.some(r => usdPrice(r) === null)) return null;
+    return Math.round(sum(rows, r => usdPrice(r)! * Number(r.count)) * 100) / 100;
+  };
+  const isPack = (id: string | null | undefined) => /pack/i.test(id || "");
+  const gaAmounts = { recharge: purchaseRevenue(purchases.filter(r => !isPack(r.product_id))), bundle: purchaseRevenue(purchases.filter(r => isPack(r.product_id))) };
+  const amounts = ["recharge", "bundle", "subscription", "unknown"].map(kind => ({ kind, revenue: kind === "recharge" || kind === "bundle" ? gaAmounts[kind] : paymentReady ? sum(paid.filter(t => classify(t) === kind), net) : null }));
   const ledgers = (prefix: string) => events.filter(r => r.event === prefix);
   const flow = (event: string, field: "battery_delta" | "coin_delta", direction: 1 | -1) => {
     if (!a.events || !a.verified_events.includes(event)) return null;
@@ -247,6 +264,20 @@ export function buildReport(c: AnalyticsContext, input: Input) {
     top_events: [...new Set(events.map(r => r.event))].map(event => ({ event, count: sum(events.filter(r => r.event === event), r => r.count), users: users(event) })).sort((a, b) => b.count - a.count).slice(0, 20),
     geo: input.geo || [], attributes: input.attributes || [], retention: a.events ? retention(input.events, c) : null,
     app_duration_distribution: [["<1m", 0, 60], ["1–5m", 60, 300], ["5–15m", 300, 900], ["15–30m", 900, 1800], ["30m+", 1800, Infinity]].map(([bucket, lo, hi]) => ({ bucket: String(bucket), session_count: a.events ? [...appSessions.values()].filter(n => n >= Number(lo) && n < Number(hi)).length : null })),
+    chats: (() => {
+      if (!a.events) return null;
+      const perUser = new Map<string, number>();
+      let total = 0;
+      for (const r of events) if (r.event === "message_send" && valid(r)) {
+        total += Number(r.count);
+        if (r.user_key) perUser.set(r.user_key, (perUser.get(r.user_key) || 0) + Number(r.count));
+      }
+      const counts = [...perUser.values()];
+      const band = (lo: number, hi: number) => counts.filter(n => n >= lo && n < hi).length;
+      return { total, users: perUser.size, median: median(counts),
+        light_rate: ratio(band(1, 5), perUser.size), medium_rate: ratio(band(5, 10), perUser.size), heavy_rate: ratio(counts.filter(n => n >= 10).length, perUser.size),
+        distribution: [...Array.from({ length: 10 }, (_, i) => String(i + 1)), ">10"].map(bucket => ({ bucket, user_count: counts.filter(n => bucket === ">10" ? n > 10 : n === Number(bucket)).length })) };
+    })(),
     sessions: { total: sessionCount, unknown: a.conversations ? unknown : null, valid: completeSessions ? sessionRows.filter(r => r.messages >= 1).length : null,
       shallow_rate: sessionRate(n => n >= 1 && n < 5), medium_rate: sessionRate(n => n >= 5 && n < 10), deep_rate: sessionRate(n => n >= 10), valid_rate: sessionRate(n => n >= 1),
       median_messages: completeSessions ? median(sessionRows.map(r => r.messages)) : null,
@@ -259,7 +290,7 @@ export function buildReport(c: AnalyticsContext, input: Input) {
       membership_extras: ["subscription_toast_cancel", "membership_promotion_popup", "membership_promotion_click", "chat_vip_click_locked"].map(event => ({ event, users: a.events ? users(event) : null })),
       gift_funnel: ["gift_popup_open", "gift_item_click", "gift_send_result"].map((event, i) => ({ step: ["Gift Popup", "Item Selected", "Gift Delivered"][i], users: supported(event) ? users(event) : null, conversion: supported(event) ? ratio(users(event), active) : null })),
       products: paymentReady && productReady ? productRows : null, recharge_funnel: rechargeFunnel,
-      missing_entry_users: a.verified_events.includes("coin_recharge_page_view") ? unique(pages.filter(p => !entries.some(e => e.flow_id === p.flow_id && e.user_key === p.user_key && e.source_page === p.source_page && Date.parse(e.first_at) <= Date.parse(p.first_at))).map(r => r.user_key)) : null,
+      missing_entry_users: null,
       refunded_transactions: paymentReady ? transactions.filter(t => t.status === "refunded").length : null },
     economy: {
       battery_charged: flow("battery_status_change", "battery_delta", 1),

@@ -33,6 +33,9 @@ export function eventQuery(table: string, identities?: string, aliases?: string)
       ${param("event_id")} AS event_id, ${param("message_id")} AS message_id,
       ${param("result")} AS result, COALESCE(${param("action")},${param("change_type")},${param("trigger_type")}) AS action,
       ${param("flow_id")} AS flow_id, ${param("source_page")} AS source_page,
+      COALESCE(${param("sku")}, ${param("product_id")}) AS product_id,
+      SAFE_CAST(REGEXP_REPLACE(COALESCE(${param("price")}, ''), r'[^0-9.]', '') AS FLOAT64) AS price,
+      UPPER(COALESCE(${param("currency")}, '')) AS currency,
       TIMESTAMP_MICROS(event_timestamp) AS occurred_at,
       COALESCE(SAFE_CAST(${param("engagement_time_msec")} AS FLOAT64),0)/1000 AS engagement_sec,
       SAFE_CAST(${param("battery_after")} AS FLOAT64)-SAFE_CAST(${param("battery_before")} AS FLOAT64) AS battery_delta,
@@ -50,13 +53,13 @@ export function eventQuery(table: string, identities?: string, aliases?: string)
     GROUP BY f.install_key
   )
   SELECT
-    ARRAY(SELECT AS STRUCT date,event,user_key,install_key,robot_id,conversation_id,ga_session_id,result,action,flow_id,source_page,
+    ARRAY(SELECT AS STRUCT date,event,user_key,install_key,robot_id,conversation_id,ga_session_id,result,action,flow_id,source_page,product_id,price,currency,
       COUNT(*) AS count, SUM(engagement_sec) AS engagement_sec, SUM(battery_delta) AS battery_delta, SUM(coin_delta) AS coin_delta,
       COUNTIF(event='message_send' AND message_id IS NULL) AS missing_message_ids,
       COUNTIF(event_id IS NULL) AS missing_event_ids,
       CAST(MIN(occurred_at) AS STRING) AS first_at,CAST(MAX(occurred_at) AS STRING) AS last_at
       FROM events WHERE event NOT IN ('notification_receive','notification_foreground','notification_open','notification_dismiss','app_remove')
-      GROUP BY date,event,user_key,install_key,robot_id,conversation_id,ga_session_id,result,action,flow_id,source_page) AS events,
+      GROUP BY date,event,user_key,install_key,robot_id,conversation_id,ga_session_id,result,action,flow_id,source_page,product_id,price,currency) AS events,
     ARRAY(SELECT AS STRUCT f.install_key,f.date,IFNULL(s.sent_dates,ARRAY<STRING>[]) AS sent_dates
       FROM first_opens f LEFT JOIN install_sends s USING(install_key)) AS installs,
     ARRAY(SELECT AS STRUCT geo.country AS region,COUNT(DISTINCT user_key) AS users FROM filtered WHERE PARSE_DATE('%Y%m%d',event_date) BETWEEN DATE(@start) AND DATE(@end) GROUP BY region ORDER BY users DESC) AS geo,

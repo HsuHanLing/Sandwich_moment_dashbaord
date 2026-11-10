@@ -39,7 +39,8 @@ test("RC parsing retains real zero and provisional current day without substitut
   assert.equal(d.summary.arppu, null); assert.equal(d.summary.payers, null); assert.equal(d.summary.pay_rate, null); assert.equal(d.summary.membership_rate, null);
   assert.equal(d.payments.products, null); assert.equal(d.payments.subscriptions, null);
   assert.deepEqual(d.daily.map(r => r.revenue), [3.99, 0]);
-  assert.ok(d.payments.amounts.every(r => r.revenue === null));
+  assert.equal(d.payments.amounts.find(r => r.kind === "recharge")?.revenue, 0);
+  assert.equal(d.payments.amounts.find(r => r.kind === "subscription")?.revenue, null);
 });
 
 test("verified ledger takes precedence and is never added to RC Charts or GA purchase events", () => {

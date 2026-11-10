@@ -99,8 +99,7 @@ test("inactive renewals remain in purchasers and rates may exceed 100 percent", 
 test("classification is based on verified page provenance; unknown is not silently a bundle", () => {
   const input = setup(); const t = input.transactions[0]; input.transactions.push({ ...t, transaction_id: "bundle", source_page: "firstpack_offer" }, { ...t, transaction_id: "unknown", source_page: null });
   const d = buildReport(context, input); const a = Object.fromEntries(d.payments.amounts.map(r => [r.kind, r.revenue]));
-  assert.equal(a.recharge, 3.99); assert.equal(a.bundle, 3.99); assert.equal(a.unknown, 3.99);
-  assert.ok(Math.abs(d.payments.amounts.reduce((n, r) => n + r.revenue!, 0) - d.summary.revenue!) < 1e-9);
+  assert.equal(a.recharge, 0); assert.equal(a.bundle, 0); assert.equal(a.subscription, 5.98); assert.equal(a.unknown, 3.99);
   assert.ok(Math.abs(d.daily.reduce((n, r) => n + r.recharge_revenue! + r.bundle_revenue! + r.subscription_revenue! + r.unknown_revenue!, 0) - d.summary.revenue!) < 1e-9);
 });
 test("refund snapshots select the latest state effective before the period cutoff", () => {
@@ -121,7 +120,9 @@ test("missing catalog periods hide subscription totals rather than inventing a p
 test("missing financial/conversation sources remain null throughout the report", () => {
   const input = setup(); input.availability.transactions = false; input.availability.conversations = false;
   const d = buildReport(context, input); assert.equal(d.summary.revenue, null); assert.equal(d.summary.arppu, null); assert.equal(d.summary.dispose_rate, null);
-  assert.equal(d.sessions.total, null); assert.ok(d.daily.every(r => r.revenue === null)); assert.ok(d.payments.amounts.every(r => r.revenue === null));
+  assert.equal(d.sessions.total, null); assert.ok(d.daily.every(r => r.revenue === null));
+  assert.equal(d.payments.amounts.find(r => r.kind === "recharge")?.revenue, 0);
+  assert.equal(d.payments.amounts.find(r => r.kind === "subscription")?.revenue, null);
 });
 test("unavailable events are not shown as zero economy/report counters", () => {
   const input = setup(); input.availability.events = false; input.events = [];
@@ -161,7 +162,8 @@ test("image unlock rate counts confirms; gift delivery stays on the unverified r
   assert.equal(d.summary.image_unlock_rate, 50);
   assert.equal(d.behaviour.unlocks, 4);
   assert.equal(d.economy.unlock_successes, null);
-  assert.equal(d.summary.gift_rate, null);
+  assert.equal(d.summary.gift_rate, 50);
+  assert.equal(d.behaviour.gifts, 2);
 });
 test("documented completion/trigger/failure events do not require a new capability manifest", () => {
   const input = setup(); input.availability.verified_events = [];
@@ -180,14 +182,38 @@ test("legacy coin rewards are separate from complete coin flows; missing deltas 
   d = buildReport(context, input);
   assert.equal(d.economy.reported_coin_rewards, null); assert.equal(d.economy.coins_spent, null); assert.equal(d.economy.coins_earned, null);
 });
-test("recharge flow requires matching identity, source, flow and chronological ordering", () => {
-  const input = setup(); assert.equal(buildReport(context, input).payments.recharge_funnel[3].users, 1);
-  input.transactions[0].purchased_at = "2026-11-04T09:00:00Z";
-  assert.equal(buildReport(context, input).payments.recharge_funnel[3].users, 0);
+test("recharge actions are independent and purchase success uses coin_purchase_result", () => {
+  const input = setup();
+  const base = input.events.find(r => r.event === "click_mcoin_topup_entry")!;
+  input.events.push({ ...base, event: "coin_purchase_result", result: "success", product_id: "moment_coins_100", flow_id: null, source_page: null });
+  input.events.push({ ...base, event: "coin_purchase_result", result: "cancel", user_key: "other-user", product_id: "moment_coins_20" });
+  const funnel = buildReport(context, input).payments.recharge_funnel;
+  assert.equal(funnel[0].users, 1);
+  assert.equal(funnel[3].users, 1);
+  assert.equal(funnel[3].step, "Purchase Success");
 });
-test("direct recharge-page visits are reported as missing entries, never synthesized", () => {
-  const input = setup(); input.events = input.events.filter(r => r.event !== "click_mcoin_topup_entry");
-  const d = buildReport(context, input); assert.equal(d.payments.missing_entry_users, 1); assert.equal(d.payments.recharge_funnel[3].users, 0);
+test("message_send counts are the chat totals, without deletion events", () => {
+  const input = setup();
+  input.availability.conversations = false;
+  const d = buildReport(context, input);
+  assert.equal(d.chats?.total, 18);
+  assert.equal(d.chats?.users, 2);
+  assert.equal(d.chats?.median, 9);
+  assert.equal(d.chats?.distribution.find(r => r.bucket === "6")?.user_count, 1);
+  assert.equal(d.chats?.distribution.find(r => r.bucket === ">10")?.user_count, 1);
+  assert.equal(d.sessions.total, null);
+});
+test("successful coin purchases split packs from recharge and ignore cancels", () => {
+  const input = setup();
+  const base = input.events[0];
+  input.events.push(
+    { ...base, event: "coin_purchase_result", result: "success", product_id: "moment_coins_100", price: 3.99, currency: "US", count: 2 },
+    { ...base, event: "coin_purchase_result", result: "success", product_id: "moment_firstpack", price: 1.99, currency: "USD", count: 1 },
+    { ...base, event: "coin_purchase_result", result: "cancel", product_id: "moment_coins_200", price: 9.99, currency: "USD", count: 4 },
+  );
+  const amounts = Object.fromEntries(buildReport(context, input).payments.amounts.map(r => [r.kind, r.revenue]));
+  assert.equal(amounts.recharge, 7.98);
+  assert.equal(amounts.bundle, 1.99);
 });
 test("daily and one-day summary use the same duration and activation calculations", () => {
   const c = { ...context, start: context.end, days: 1 }; const d = buildReport(c, setup());
