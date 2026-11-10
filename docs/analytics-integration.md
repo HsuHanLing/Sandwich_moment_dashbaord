@@ -36,6 +36,8 @@ validated server configuration. Daily source precedence is selected before filte
 
 Metadata contains dates, timezone, applied filters, source availability, update
 time, demo flag, reasons and missing-ID counts. `null` means unavailable, not zero.
+`meta.source_errors` contains safe source/error codes; the matching server log
+retains the full error. Query failures do not imply that every App event is unverified.
 Sources are cached server-side for 30 seconds by complete context and history
 lookback; the browser cancels stale requests and caches complete URLs for 30 seconds.
 
@@ -51,6 +53,35 @@ checks. Set coverage dates only for completely loaded date ranges. Keep them
 behind any unresolved missing export, failed batch, ambiguous refund or unknown
 conversation creation history. Update the watermarks with each successful import;
 do not mark an empty/new table complete to make the UI display numbers.
+
+### Troubleshooting deployed event queries
+
+`MOMENT_EVENTS_TABLE=project.dataset.events_*` is the preferred explicit setting.
+Legacy `BIGQUERY_DATASET=project.dataset` is also supported, as is a bare dataset
+with `GOOGLE_CLOUD_PROJECT` or the credential's default project. The billing
+project is never prepended to an already project-qualified dataset.
+
+If the report shows an Events error, inspect **Runtime Logs**, not Build Logs.
+Search for `Moment Events query failed`. The 2026-11-10 production error
+`Queries in UNION ALL have mismatched column count` was caused by the device
+branch returning a STRUCT while the language branch returned three columns.
+Both branches now return STRUCTs of the same shape.
+
+The opt-in BigQuery integration test executes the actual generated event SQL
+against literal synthetic GA4 rows, including both attribute branches, daily /
+intraday precedence, event deduplication and new-install message dates:
+
+```
+# Provide Google credentials and a project with bigquery.jobs.create first.
+# PowerShell:
+$env:MOMENT_SQL_TEST_PROJECT='your-authorized-query-project'
+node --experimental-strip-types --test tests/sql.integration.test.ts
+```
+
+It is skipped by default and reads no private tables. A successful Next.js build
+does not validate BigQuery SQL. Missing conversation history, verified transaction
+ledger, product catalog or reporting timezone remain separate integration tasks;
+do not remove their notices to imply they have been supplied.
 
 `MOMENT_VERIFIED_EVENTS` is an explicit comma-separated capability manifest for
 QA-verified App versions. Its COMPLETE_FROM/THROUGH dates must cover the entire

@@ -108,7 +108,10 @@ test("missing financial/conversation sources remain null throughout the report",
 });
 test("unavailable events are not shown as zero economy/report counters", () => {
   const input = setup(); input.availability.events = false; input.events = [];
+  input.availability.errors = [{ source: "Events", code: "query_invalid", message: "BigQuery rejected the SQL" }];
   const d = buildReport(context, input); assert.equal(d.behaviour.reports, null); assert.equal(d.economy.battery_charged, null); assert.equal(d.summary.dau, null);
+  assert.deepEqual(d.meta.source_errors, input.availability.errors);
+  assert.ok(!d.meta.reasons.some(r => r.startsWith("Unverified result events:")));
 });
 test("missing user keys do not inflate per-chatter averages", () => {
   const input = setup(); const r = input.events.find(r => r.event === "message_send")!;

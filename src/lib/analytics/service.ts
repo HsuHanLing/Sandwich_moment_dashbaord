@@ -4,6 +4,7 @@ import type { AnalyticsContext } from "./context";
 import { eventQuery, conversationQuery, transactionQuery, identifier, queryParameters } from "./sql";
 import robotNames from "./robot-names.json";
 import { demoInput } from "./demo";
+import { needsDefaultProject, resolveEventsTable, sourceFailure } from "./config";
 
 function covers(prefix: string, c: AnalyticsContext): boolean {
   const from = process.env[`${prefix}_COMPLETE_FROM`]; const through = process.env[`${prefix}_COMPLETE_THROUGH`];
@@ -11,14 +12,15 @@ function covers(prefix: string, c: AnalyticsContext): boolean {
 }
 async function load(c: AnalyticsContext, historyDays: number) {
   if (process.env.MOMENT_DEMO === "true") return buildReport(c, demoInput(c));
-  const a: Availability = { events: false, conversations: false, transactions: false, products: false, reasons: [], verified_events: covers("MOMENT_VERIFIED_EVENTS", c) ? (process.env.MOMENT_VERIFIED_EVENTS || "").split(",").filter(Boolean) : [], demo: false };
+  const a: Availability = { events: false, conversations: false, transactions: false, products: false, reasons: [], errors: [], verified_events: covers("MOMENT_VERIFIED_EVENTS", c) ? (process.env.MOMENT_VERIFIED_EVENTS || "").split(",").filter(Boolean) : [], demo: false };
   if (!process.env.MOMENT_REPORT_TIME_ZONE) a.reasons.push("Report timezone not configured; UTC assumed");
   const input: Input = { events: [], installs: [], conversations: [], transactions: [], products: [], availability: a, robot_names: robotNames };
   const query = async <T,>(sql: string) => (await bigquery.query({ query: sql, params: queryParameters(c, historyDays), maximumBytesBilled: process.env.MOMENT_MAXIMUM_BYTES_BILLED || "2000000000" }))[0] as T[];
-  const task = async (name: string, fn: () => Promise<void>) => { try { await fn(); } catch (e) { console.error(`Moment ${name} query failed`, e instanceof Error ? e.message : "Unknown error"); a.reasons.push(`${name} source unavailable; check server logs and configuration`); } };
-  const eventTable = process.env.MOMENT_EVENTS_TABLE || (process.env.GOOGLE_CLOUD_PROJECT && process.env.BIGQUERY_DATASET ? `${process.env.GOOGLE_CLOUD_PROJECT}.${process.env.BIGQUERY_DATASET}.${process.env.BIGQUERY_TABLE || "events_*"}` : undefined);
+  const task = async (name: string, fn: () => Promise<void>) => { try { await fn(); } catch (e) { const issue = sourceFailure(e); console.error(`Moment ${name} query failed [${issue.code}]`, e instanceof Error ? e.message : "Unknown error"); a.errors!.push({ source: name, ...issue }); a.reasons.push(`${name} [${issue.code}]: ${issue.message}`); } };
   await Promise.all([
     task("Events", async () => {
+      const defaultProject = needsDefaultProject(process.env) ? await bigquery.getProjectId() : undefined;
+      const eventTable = resolveEventsTable(process.env, defaultProject);
       if (!eventTable) { a.reasons.push("GA4 events table not configured"); return; }
       const [r] = await query<{ events: Rollup[]; installs: Install[]; geo: Input["geo"]; attributes: Input["attributes"] }>(eventQuery(eventTable, process.env.MOMENT_IDENTITIES_TABLE, process.env.MOMENT_ROBOT_ALIASES_TABLE));
       input.events = r?.events || []; input.installs = r?.installs || []; input.geo = r?.geo || []; input.attributes = r?.attributes || []; a.events = true;

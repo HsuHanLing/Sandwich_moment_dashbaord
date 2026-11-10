@@ -13,12 +13,14 @@ export const factFilters = `(@version='' OR version=@version) AND (@platform='' 
 export function eventQuery(table: string, identities?: string, aliases?: string): string {
   const canonical = identities ? `(SELECT ARRAY_AGG(i.user_key ORDER BY i.valid_from DESC LIMIT 1)[SAFE_OFFSET(0)] FROM ${identifier(identities)} i WHERE i.source='ga4' AND i.source_id=e.user_pseudo_id AND TIMESTAMP_MICROS(e.event_timestamp)>=i.valid_from AND (i.valid_to IS NULL OR TIMESTAMP_MICROS(e.event_timestamp)<i.valid_to))` : "CAST(NULL AS STRING)";
   const virtual = aliases ? `(SELECT ANY_VALUE(robot_id) FROM ${identifier(aliases)} WHERE virtual_id=${param("virtual_id")})` : "CAST(NULL AS STRING)";
-  return `WITH source AS (
+  return `WITH scanned AS (
     SELECT *, _TABLE_SUFFIX AS source_suffix FROM ${identifier(table)}
     WHERE ((_TABLE_SUFFIX BETWEEN REPLACE(@scan_start,'-','') AND REPLACE(@end,'-',''))
       OR (_TABLE_SUFFIX BETWEEN CONCAT('intraday_',REPLACE(@scan_start,'-','')) AND CONCAT('intraday_',REPLACE(@end,'-',''))))
       AND REGEXP_CONTAINS(_TABLE_SUFFIX,r'^(intraday_)?[0-9]{8}$')
-    QUALIFY _TABLE_SUFFIX=MIN(_TABLE_SUFFIX) OVER(PARTITION BY event_date)
+  ), source AS (
+    SELECT * FROM scanned
+    QUALIFY source_suffix=MIN(source_suffix) OVER(PARTITION BY event_date)
   ), filtered AS (
     SELECT e.*, COALESCE(${canonical}, CONCAT('account:',NULLIF(COALESCE(user_id,${param("user_id")}),'')), CONCAT('install:',user_pseudo_id)) AS user_key
     FROM source e
@@ -41,6 +43,11 @@ export function eventQuery(table: string, identities?: string, aliases?: string)
     QUALIFY event_id IS NULL OR ROW_NUMBER() OVER(PARTITION BY event,event_id ORDER BY occurred_at)=1
   ), first_opens AS (
     SELECT install_key, MIN(occurred_at) AS first_at, MIN(date) AS date FROM events WHERE event='first_open' AND install_key IS NOT NULL GROUP BY install_key
+  ), install_sends AS (
+    SELECT f.install_key,ARRAY_AGG(DISTINCT e.date IGNORE NULLS) AS sent_dates
+    FROM first_opens f LEFT JOIN events e ON e.install_key=f.install_key AND e.event='message_send'
+      AND e.result='success' AND e.occurred_at>=f.first_at
+    GROUP BY f.install_key
   )
   SELECT
     ARRAY(SELECT AS STRUCT date,event,user_key,install_key,robot_id,conversation_id,ga_session_id,result,action,flow_id,source_page,
@@ -50,13 +57,11 @@ export function eventQuery(table: string, identities?: string, aliases?: string)
       CAST(MIN(occurred_at) AS STRING) AS first_at,CAST(MAX(occurred_at) AS STRING) AS last_at
       FROM events WHERE event NOT IN ('notification_receive','notification_foreground','notification_open','notification_dismiss','app_remove')
       GROUP BY date,event,user_key,install_key,robot_id,conversation_id,ga_session_id,result,action,flow_id,source_page) AS events,
-    ARRAY(SELECT AS STRUCT f.install_key,f.date,
-      ARRAY(SELECT DISTINCT e.date FROM events e WHERE e.install_key=f.install_key AND e.event='message_send'
-        AND e.result='success' AND e.occurred_at>=f.first_at) AS sent_dates
-      FROM first_opens f) AS installs,
+    ARRAY(SELECT AS STRUCT f.install_key,f.date,IFNULL(s.sent_dates,ARRAY<STRING>[]) AS sent_dates
+      FROM first_opens f LEFT JOIN install_sends s USING(install_key)) AS installs,
     ARRAY(SELECT AS STRUCT geo.country AS region,COUNT(DISTINCT user_key) AS users FROM filtered WHERE PARSE_DATE('%Y%m%d',event_date) BETWEEN DATE(@start) AND DATE(@end) GROUP BY region ORDER BY users DESC) AS geo,
     ARRAY(SELECT AS STRUCT 'device' AS type, device.category AS attribute,COUNT(DISTINCT user_key) AS users FROM filtered WHERE PARSE_DATE('%Y%m%d',event_date) BETWEEN DATE(@start) AND DATE(@end) GROUP BY attribute
-      UNION ALL SELECT 'language',device.language,COUNT(DISTINCT user_key) FROM filtered WHERE PARSE_DATE('%Y%m%d',event_date) BETWEEN DATE(@start) AND DATE(@end) GROUP BY device.language) AS attributes`;
+      UNION ALL SELECT AS STRUCT 'language',device.language,COUNT(DISTINCT user_key) FROM filtered WHERE PARSE_DATE('%Y%m%d',event_date) BETWEEN DATE(@start) AND DATE(@end) GROUP BY device.language) AS attributes`;
 }
 
 export function conversationQuery(table: string): string {
