@@ -140,7 +140,10 @@ test("success counters reject intent/cancel events and reports count events rath
   const input = setup(); const r = input.events.find(r => r.event === "image_unlock_result")!;
   input.events.push({ ...r, result: "fail", count: 50 }, { ...r, event: "image_unlock_confirm", count: 100 });
   const d = buildReport(context, input); assert.equal(d.economy.unlock_successes, 1); assert.equal(d.behaviour.unlocks, 100); assert.equal(d.behaviour.reports, 2);
-  assert.equal(d.coverage.length, 14); assert.equal(d.coverage[8].users, 1);
+  assert.equal(d.coverage.length, 12);
+  assert.equal(d.coverage.find(row => row.event === "image_unlock_confirm")?.en, "unlock_successed");
+  assert.equal(d.coverage.find(row => row.event === "image_unlock_confirm")?.users, 1);
+  assert.equal(d.coverage.some(row => ["image_unlock_attempt", "image_unlock_result", "gift_send_result"].includes(row.event)), false);
 });
 test("conversation deletions count chat_session_dispose events without a connected history", () => {
   const input = setup();

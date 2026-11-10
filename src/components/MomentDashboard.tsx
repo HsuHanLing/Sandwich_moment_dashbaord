@@ -160,7 +160,7 @@ export function MomentDashboard() {
         </>}</Panel>
         <Panel title={text("飛輪健康儀表盤", "Flywheel health dashboard")} endpoint="health-dashboard" initialDays={30} filters={filters} zh={zh}>{d => stats(d, true)}</Panel>
       </>}
-      {tab === "activation" && <Panel title={text("14 項行為覆蓋", "14 behaviour coverage stages")} endpoint="activation-funnel" initialDays={30} filters={filters} zh={zh}>{d => <>
+      {tab === "activation" && <Panel title={text("行為覆蓋", "Behaviour coverage")} endpoint="activation-funnel" initialDays={30} filters={filters} zh={zh}>{d => <>
         <p className="my-3 text-xs text-[var(--secondary-text)]">{text("各行為獨立去重；覆蓋率＝行為使用者／期間活躍使用者，無順序要求。", "Independent distinct users per action / active users. These are not sequential conversion steps.")}</p>
         <div className="space-y-3 overflow-x-auto">{d.coverage.map((r, i) => <div key={r.event} className="grid min-w-[480px] grid-cols-[180px_1fr_100px] items-center gap-3 text-xs"><span>{i + 1}. {zh ? r.zh : r.en}</span><div className="h-5 rounded bg-[var(--background)]"><div className="h-full rounded bg-[var(--accent)]" style={{ width: `${r.conversion || 0}%` }} /></div><span className="text-right">{fmt(r.users)} · {fmt(r.conversion, "percent")}</span></div>)}</div>
         <div className="mt-6 grid gap-6 lg:grid-cols-2"><div><h3>{text("地區分布", "Regions")}</h3><Table rows={d.geo} columns={[{ key: "region", title: text("地區", "Region") }, { key: "users", title: text("用戶", "Users") }]} /></div><div><h3>{text("裝置與語言", "Devices and languages")}</h3><Table rows={d.attributes} columns={[{ key: "type", title: text("類型", "Type") }, { key: "attribute", title: text("屬性", "Attribute") }, { key: "users", title: text("用戶", "Users") }]} /></div></div>
