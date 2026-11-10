@@ -91,18 +91,24 @@ function Panel({ title, endpoint, initialDays, filters, zh, children, compare = 
       {state.data.meta.reasons.length > 0 && <details className="mt-4 rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-xs"><summary className="cursor-pointer font-medium">{zh ? "資料尚未完整接入，— 代表未知" : "Partial data · — means unavailable"}</summary><ul className="mt-2 list-disc space-y-1 pl-4">{state.data.meta.reasons.filter(r => !billing.data || r !== "Product catalog not connected").map(r => <li key={r}>{r}</li>)}</ul></details>}
       {billing.loading && <p role="status" className="mt-3 text-xs text-[var(--secondary-text)]">{zh ? "正在讀取並對帳完整付款紀錄；首次可能需要約 2 分鐘，其他指標可先查看。" : "Loading and reconciling complete billing records; the first load can take about 2 minutes. Other metrics are available now."}</p>}
       {billing.error && <p className="mt-3 text-xs text-amber-700 dark:text-amber-300">{zh ? "付款明細尚未可用：" : "Billing details unavailable: "}{billing.error}</p>}
-      {billing.data && <p className="mt-3 text-xs text-[var(--secondary-text)]">{zh ? "付款人數依 RevenueCat 顧客 ID 去重，已逐日對帳；尚未與 App 匿名身分映射，因此跨來源付費率仍待接入。交易快照更新：" : "Payers use distinct RevenueCat customer IDs and reconcile by day. App identity mapping remains pending, so canonical payer/active-user rates are unavailable. Billing snapshot: "}{new Date(billing.data.fetched_at).toLocaleString()}</p>}
+      {billing.data && <p className="mt-3 text-xs text-[var(--secondary-text)]">{zh ? "付款與訂閱人數用 RevenueCat 顧客 ID，已與已完成日期逐日對帳。除以 App 活躍人數時，兩套身分沒有對照。快照更新：" : "Payers and subscribers are RevenueCat customer IDs, reconciled on completed days. Dividing by App active users does not link the two ID systems. Snapshot: "}{new Date(billing.data.fetched_at).toLocaleString()}</p>}
       {children(billing.data ? { ...state.data, billing: billing.data,
         summary: { ...state.data.summary, revenue: billing.data.revenue, arpu: state.data.summary.active_users ? billing.data.revenue / state.data.summary.active_users : null,
+          arppu: billing.data.arppu,
           pay_rate: state.data.summary.active_users ? billing.data.payers / state.data.summary.active_users * 100 : null,
           membership_rate: state.data.summary.active_users ? billing.data.subscription_users / state.data.summary.active_users * 100 : null },
         daily: state.data.daily.map(r => ({ ...r, revenue: billing.data!.daily.find(day => day.date === r.date)?.revenue ?? r.revenue })),
-        payments: { ...state.data.payments, revenuecat: state.data.payments.revenuecat ? { ...state.data.payments.revenuecat, revenue: billing.data.revenue, daily: billing.data.daily } : null },
+        payments: { ...state.data.payments,
+          membership_funnel: state.data.payments.membership_funnel.map(row => row.step === "Subscribed" ? { ...row, users: billing.data!.subscription_users, conversion: state.data.summary.active_users ? billing.data!.subscription_users / state.data.summary.active_users * 100 : null } : row),
+          revenuecat: state.data.payments.revenuecat ? { ...state.data.payments.revenuecat, revenue: billing.data.revenue, daily: billing.data.daily } : null },
       } : state.data)}</>}
   </section>;
 }
 function Missing({ zh }: { zh: boolean }) { return <p className="my-4 rounded-lg border border-[var(--border)] p-4 text-sm text-[var(--secondary-text)]">{zh ? "待接入已驗證資料，尚無可計算結果。" : "Awaiting verified data. No result available yet."}</p>; }
-function SubscriptionTable({ d, columns, zh }: { d: Data; columns: Column[]; zh: boolean }) { const rows = d.payments.subscriptions ?? d.billing?.subscriptions?.map(r => ({ ...r, conversion: null })); return !rows ? <Missing zh={zh} /> : <Table rows={rows.map(r => ({ ...r, period: zh ? ({ weekly: "週訂閱", monthly: "月訂閱", annual: "年訂閱" } as Record<string, string>)[r.period] : r.period }))} columns={columns} />; }
+function SubscriptionTable({ d, columns, zh }: { d: Data; columns: Column[]; zh: boolean }) {
+  const rows = d.payments.subscriptions ?? d.billing?.subscriptions?.map(r => ({ ...r, conversion: d.summary.active_users ? r.users / d.summary.active_users * 100 : null }));
+  return !rows ? <Missing zh={zh} /> : <Table rows={rows.map(r => ({ ...r, period: zh ? ({ weekly: "週訂閱", monthly: "月訂閱", annual: "年訂閱" } as Record<string, string>)[r.period] : r.period }))} columns={columns} />;
+}
 
 export function MomentDashboard() {
   const { locale, setLocale } = useLocale(); const zh = locale === "zh"; const text = (cn: string, en: string) => zh ? cn : en;

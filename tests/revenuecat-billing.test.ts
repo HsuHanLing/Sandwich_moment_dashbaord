@@ -37,6 +37,15 @@ test("duplicate transactions deduplicate, but conflicting owners block a false p
   assert.throws(() => summarizeBilling(snapshot, c, chart), /Conflicting/);
 });
 
+test("a provisional current day does not hide payer counts when completed days reconcile", () => {
+  const { snapshot, chart } = setup();
+  chart.daily[chart.daily.length - 1].incomplete = true;
+  chart.daily[chart.daily.length - 1].revenue = 0;
+  chart.daily[chart.daily.length - 1].transactions = 0;
+  const r = summarizeBilling(snapshot, c, chart);
+  assert.equal(r.payers, 2);
+  assert.equal(r.revenue, 9.97);
+});
 test("daily reconciliation rejects refunds, omitted transactions and offsetting day errors", () => {
   const { snapshot, chart } = setup(); chart.daily[0].revenue = 0; chart.daily[1].revenue = 2.99;
   assert.throws(() => summarizeBilling(snapshot, c, chart), /reconcile/);

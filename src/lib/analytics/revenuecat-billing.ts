@@ -54,9 +54,11 @@ export function summarizeBilling(snapshot: BillingSnapshot, c: AnalyticsContext,
     }
   }
   const all = [...rows.values()];
-  // Check every date, not just the grand total: offsetting omissions/refunds may
-  // otherwise cancel out. Any mismatch leaves billing metrics unavailable.
+  // Check every completed date, not just the grand total: offsetting omissions
+  // or refunds may otherwise cancel out. The current chart day is provisional
+  // and must not hide payer counts for the completed days.
   for (const day of chart.daily) {
+    if (day.incomplete) continue;
     const list = all.filter(r => r.date === day.date);
     if (day.revenue === null || day.transactions === null || Math.abs(list.reduce((n, r) => n + r.usd, 0) - day.revenue) > 0.005 || list.length !== day.transactions) throw new Error("Customer transaction counts/revenue do not reconcile to the filtered daily RevenueCat chart; historical refunds or country attribution need the ledger");
   }
@@ -97,11 +99,18 @@ export async function fetchBillingSnapshot(env: Environment = process.env, fetch
       const url = new URL(path.startsWith("/") ? `https://api.revenuecat.com${path}` : path, base + "/");
       if (url.origin !== "https://api.revenuecat.com" || !url.pathname.startsWith(`/v2/projects/${encodeURIComponent(project)}/`) || visited.has(url.href) || visited.size >= 100) throw new Error("Invalid or incomplete RevenueCat pagination");
       visited.add(url.href);
-      const slot = Math.max(Date.now(), nextAt); nextAt = slot + 170;
+      const slot = Math.max(Date.now(), nextAt); nextAt = slot + 40;
       if (slot > Date.now()) await new Promise(resolve => setTimeout(resolve, slot - Date.now()));
       abort.signal.throwIfAborted();
-      const r = await fetcher(url, { headers: { Authorization: `Bearer ${key}`, Accept: "application/json" }, signal: AbortSignal.any([abort.signal, deadline, AbortSignal.timeout(20000)]), cache: "no-store" });
-      if (!r.ok) throw new Error(`RevenueCat billing HTTP ${r.status}; verify customer, purchase, subscription and product read permissions`);
+      let r: Response | undefined;
+      for (let attempt = 0; attempt < 4; attempt++) {
+        abort.signal.throwIfAborted(); deadline.throwIfAborted();
+        r = await fetcher(url, { headers: { Authorization: `Bearer ${key}`, Accept: "application/json" }, signal: AbortSignal.any([abort.signal, deadline, AbortSignal.timeout(20000)]), cache: "no-store" });
+        if (r.status !== 429 && r.status !== 503) break;
+        const retryAfter = Number(r.headers.get("retry-after"));
+        await new Promise(resolve => setTimeout(resolve, (Number.isFinite(retryAfter) && retryAfter > 0 ? Math.min(retryAfter, 5) : attempt + 1) * 1000));
+      }
+      if (!r?.ok) throw new Error(`RevenueCat billing HTTP ${r?.status ?? 0}; verify customer, purchase, subscription and product read permissions`);
       const d = await r.json();
       if (!Array.isArray(d.items)) throw new Error("Incomplete RevenueCat list response");
       items.push(...d.items); path = d.next_page || "";
@@ -113,7 +122,7 @@ export async function fetchBillingSnapshot(env: Environment = process.env, fetch
     const [products, customers] = await Promise.all([list<Product>(base + "/products?limit=100"), list<{ id: string }>(base + "/customers?limit=100")]);
     const snapshot: BillingSnapshot = { fetched_at: "", customer_count: customers.length, products, purchases: [], subscriptions: [] };
     let cursor = 0;
-    await Promise.all(Array.from({ length: 4 }, async () => {
+    await Promise.all(Array.from({ length: 8 }, async () => {
       while (cursor < customers.length) {
         const c = customers[cursor++];
         const path = `${base}/customers/${encodeURIComponent(c.id)}`;
