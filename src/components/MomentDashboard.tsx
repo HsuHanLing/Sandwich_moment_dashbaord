@@ -1,6 +1,7 @@
 "use client";
 
-import { createContext, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Bar, BarChart, CartesianGrid, Cell, Legend, Line, LineChart, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { useLocale } from "@/contexts/LocaleContext";
 import type { Report } from "@/lib/analytics/model";
@@ -63,23 +64,54 @@ function useBilling(report: Data | null, enabled: boolean) {
   }, [key]);
   return state.key === key ? state : { key, loading: Boolean(key) };
 }
+function HoverNote({ text, className, children }: { text?: string; className?: string; children: React.ReactNode }) {
+  const anchor = useRef<HTMLSpanElement>(null);
+  const [style, setStyle] = useState<React.CSSProperties | null>(null);
+  const place = () => {
+    const rect = anchor.current?.getBoundingClientRect();
+    if (!rect || !text) return;
+    const width = 320;
+    const left = Math.min(Math.max(8, rect.left), window.innerWidth - width - 8);
+    const below = window.innerHeight - rect.bottom;
+    setStyle(below >= 150
+      ? { position: "fixed", top: rect.bottom + 6, left, width, zIndex: 80 }
+      : { position: "fixed", top: Math.max(8, rect.top - 6), left, width, transform: "translateY(-100%)", zIndex: 80 });
+  };
+  useEffect(() => {
+    if (!style) return;
+    const close = () => setStyle(null);
+    window.addEventListener("scroll", close, true);
+    window.addEventListener("resize", close);
+    return () => { window.removeEventListener("scroll", close, true); window.removeEventListener("resize", close); };
+  }, [style]);
+  return <span ref={anchor} className={className} onMouseEnter={place} onMouseLeave={() => setStyle(null)} onFocus={place} onBlur={() => setStyle(null)}>
+    {children}
+    {style && text && createPortal(<span role="tooltip" style={style} className="pointer-events-none whitespace-pre-line rounded-lg border border-[var(--border)] bg-[var(--card-bg)] px-3 py-2 text-left text-[11px] font-normal normal-case leading-relaxed text-[var(--secondary-text)] shadow-lg">{text}</span>, document.body)}
+  </span>;
+}
 function Hint({ text }: { text?: string }) {
   if (!text) return null;
-  return <span className="group/hint relative ml-1 inline-flex align-middle">
-    <span tabIndex={0} className="cursor-help text-[10px] leading-none text-[var(--secondary-text)]" aria-label={text}>ⓘ</span>
-    <span role="tooltip" className="pointer-events-none invisible absolute bottom-full left-1/2 z-50 mb-1 w-64 -translate-x-1/2 rounded-lg border border-[var(--border)] bg-[var(--card-bg)] px-2 py-1.5 text-left text-[11px] font-normal normal-case leading-relaxed text-[var(--secondary-text)] opacity-0 shadow-lg group-hover/hint:visible group-hover/hint:opacity-100 group-focus-within/hint:visible group-focus-within/hint:opacity-100">{text}</span>
-  </span>;
+  return <HoverNote text={text}><span tabIndex={0} className="ml-1 cursor-help text-[10px] leading-none text-[var(--secondary-text)]">ⓘ</span></HoverNote>;
+}
+function RankList({ rows }: { rows: { name: string; value: number; share?: number | null; note: string }[] }) {
+  const max = Math.max(...rows.map(r => r.value), 1);
+  return <div className="space-y-1.5">{rows.map(r => <HoverNote key={r.name} text={r.note} className="grid grid-cols-[minmax(6.5rem,11rem)_1fr_auto] items-center gap-3 py-1 text-xs">
+    <span className="truncate">{r.name}</span>
+    <div className="h-2.5 overflow-hidden rounded bg-[var(--background)]"><div className="h-full rounded bg-[#49a44c]" style={{ width: `${r.value > 0 ? Math.max(r.value / max * 100, 2) : 0}%` }} /></div>
+    <span className="tabular-nums text-[var(--secondary-text)]">{fmt(r.value)}{r.share == null ? "" : ` · ${fmt(r.share, "percent")}`}</span>
+  </HoverNote>)}</div>;
 }
 function ChartBox({ title, note, height = 280, children }: { title: string; note?: string; height?: number; children: React.ReactNode }) {
   return <div className="mt-6"><h3 className="flex items-center font-semibold">{title}<Hint text={note} /></h3><div className="mt-3" style={{ height }}>{children}</div></div>;
 }
 function Card({ label, value, kind, note, previous }: { label: string; value: unknown; kind?: Column["format"]; note?: string; previous?: number | null; unavailable?: string }) {
   const delta = previous === undefined ? undefined : change(typeof value === "number" ? value : null, previous);
-  return <div className="rounded-xl border border-[var(--card-stroke)] bg-[var(--card-bg)] p-4">
-    <div className="flex items-start justify-between gap-2 text-xs text-[var(--secondary-text)]"><span>{label}</span><Hint text={note} /></div>
+  const body = <div className="h-full rounded-xl border border-[var(--card-stroke)] bg-[var(--card-bg)] p-4">
+    <div className="flex items-start justify-between gap-2 text-xs text-[var(--secondary-text)]"><span>{label}</span>{note && <span className="cursor-help text-[10px]">ⓘ</span>}</div>
     <div className="mt-2 text-2xl font-semibold tabular-nums">{fmt(value, kind)}</div>
     {delta !== undefined && <div className="mt-1 text-xs text-[var(--secondary-text)]">{delta === null ? "—" : `${delta >= 0 ? "+" : ""}${delta.toFixed(1)}%`}</div>}
   </div>;
+  return note ? <HoverNote text={note} className="block h-full">{body}</HoverNote> : body;
 }
 function Grid({ children }: { children: React.ReactNode }) { return <div className="my-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">{children}</div>; }
 function Table({ rows, columns }: { rows: object[]; columns: Column[] }) {
@@ -125,6 +157,7 @@ function SubscriptionTable({ d, columns, zh }: { d: Data; columns: Column[]; zh:
 
 export function MomentDashboard() {
   const { locale, setLocale } = useLocale(); const zh = locale === "zh"; const text = (cn: string, en: string) => zh ? cn : en;
+  const calc = (event: string, formulaZh: string, formulaEn: string) => text(`埋點：${event}\n計算：${formulaZh}`, `Event: ${event}\nCalculation: ${formulaEn}`);
   const [ranges, setRanges] = useState<Record<string, Range>>({});
   const [tab, setTab] = useState<Tab>("overview"); const [filters, setFilters] = useState<Filters>({ version: "", platform: "", geo: "" }); const [draft, setDraft] = useState<Filters>(filters);
   const [authEnabled, setAuthEnabled] = useState(false);
@@ -206,17 +239,22 @@ export function MomentDashboard() {
         <Panel title={text("飛輪健康儀表盤", "Flywheel health dashboard")} endpoint="health-dashboard" initialDays={30} filters={filters} zh={zh}>{d => stats(d, true)}</Panel>
       </>}
       {tab === "activation" && <Panel title={text("行為覆蓋", "Behaviour coverage")} endpoint="activation-funnel" initialDays={30} filters={filters} zh={zh}>{d => {
-        const devices = d.attributes.filter(r => r.type === "device");
-        const languages = d.attributes.filter(r => r.type === "language");
-        const pie = (rows: { name: string; users: number }[]) => <ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={rows.filter(r => r.users > 0)} dataKey="users" nameKey="name" innerRadius={48} outerRadius={78} paddingAngle={2}>{rows.filter(r => r.users > 0).map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}</Pie><Tooltip {...tipStyle} /><Legend /></PieChart></ResponsiveContainer>;
+        const stepNote = (event: string) => calc(event === "image_unlock_confirm" ? "image_unlock_confirm（畫面名稱 unlock_successed）" : event === "message_send" ? "message_send（result 為空或 success）" : event, "該埋點的去重使用者 / 期間任一事件的去重使用者。各步獨立，沒有先後。", "Distinct users with this event / distinct users with any event. Each step is independent.");
+        const top = (rows: { name: string; users: number }[], limit = 8) => {
+          const sorted = rows.filter(r => r.name && r.users > 0).sort((a, b) => b.users - a.users);
+          const rest = sorted.slice(limit).reduce((n, r) => n + r.users, 0);
+          return rest > 0 ? [...sorted.slice(0, limit), { name: text("其他", "Other"), users: rest }] : sorted.slice(0, limit);
+        };
+        const regionNote = calc("geo.country", "每個國家的去重 user_key。排除 China、Hong Kong、Singapore。只列前 8 名，其餘合併為其他。", "Distinct user_key per country. China, Hong Kong and Singapore are excluded. Top 8; the rest are Other.");
+        const deviceNote = calc("device.category", "每個裝置類型的去重使用者。", "Distinct users per device category.");
+        const languageNote = calc("device.language", "每個裝置語言的去重使用者。只列前 8 名，其餘合併為其他。", "Distinct users per device language. Top 8; the rest are Other.");
         return <>
-        <ChartBox title={text("行為人數", "Users by behaviour")} note={text("各行為各自去重，再除以期間活躍使用者。沒有先後順序。unlock_successed 用 image_unlock_confirm。", "Distinct users per action, divided by period active users. No ordering. unlock_successed uses image_unlock_confirm.")} height={Math.max(280, d.coverage.length * 32)}>
-          <ResponsiveContainer width="100%" height="100%"><BarChart data={d.coverage.map(r => ({ name: zh ? r.zh : r.en, users: r.users ?? 0, rate: r.conversion ?? 0 }))} layout="vertical" margin={{ left: 8 }}><XAxis type="number" tick={axisTick} allowDecimals={false} /><YAxis type="category" dataKey="name" width={120} tick={axisTick} /><Tooltip {...tipStyle} /><Bar dataKey="users" name={text("使用者", "Users")} fill="#49a44c" radius={[0, 4, 4, 0]} /></BarChart></ResponsiveContainer>
-        </ChartBox>
-        <div className="mt-6 grid gap-6 lg:grid-cols-3">
-          <ChartBox title={text("地區", "Regions")} note={text("期間去重使用者的國家分布。已排除中國、香港、新加坡。", "Distinct users by country. China, Hong Kong and Singapore are excluded.")} height={260}>{pie(d.geo.map(r => ({ name: r.region, users: r.users })))}</ChartBox>
-          <ChartBox title={text("裝置", "Devices")} note={text("GA 裝置類型的去重使用者。", "Distinct users by GA device category.")} height={260}>{pie(devices.map(r => ({ name: r.attribute, users: r.users })))}</ChartBox>
-          <ChartBox title={text("語言", "Languages")} note={text("裝置語言的去重使用者。", "Distinct users by device language.")} height={260}>{pie(languages.map(r => ({ name: r.attribute, users: r.users })))}</ChartBox>
+        <h3 className="mt-6 flex items-center font-semibold">{text("行為人數", "Users by behaviour")}<Hint text={text("滑過每一列會顯示該步的埋點與計算。", "Hover a row to see that step's event and calculation.")} /></h3>
+        <RankList rows={d.coverage.map(r => ({ name: zh ? r.zh : r.en, value: r.users ?? 0, share: r.conversion, note: stepNote(r.event) }))} />
+        <div className="mt-8 grid gap-8 lg:grid-cols-3">
+          <div><h3 className="mb-3 flex items-center font-semibold">{text("地區", "Regions")}<Hint text={regionNote} /></h3><RankList rows={top(d.geo.map(r => ({ name: r.region, users: r.users }))).map(r => ({ name: r.name, value: r.users, note: regionNote }))} /></div>
+          <div><h3 className="mb-3 flex items-center font-semibold">{text("裝置", "Devices")}<Hint text={deviceNote} /></h3><RankList rows={top(d.attributes.filter(r => r.type === "device").map(r => ({ name: r.attribute, users: r.users })), 6).map(r => ({ name: r.name, value: r.users, note: deviceNote }))} /></div>
+          <div><h3 className="mb-3 flex items-center font-semibold">{text("語言", "Languages")}<Hint text={languageNote} /></h3><RankList rows={top(d.attributes.filter(r => r.type === "language").map(r => ({ name: r.attribute, users: r.users }))).map(r => ({ name: r.name, value: r.users, note: languageNote }))} /></div>
         </div>
       </>}}</Panel>}
       {tab === "sessions" && <Panel title={text("聊天次數", "Chat counts")} endpoint="session-quality" initialDays={30} filters={filters} zh={zh}>{d => d.chats === null ? <Missing zh={zh} /> : <>
@@ -286,7 +324,7 @@ export function MomentDashboard() {
           <ChartBox title={text("每日內購收入", "Daily IAP revenue")} note={text("RevenueCat 每日內購收入（USD、UTC）。交易次數不是付費人數。", "RevenueCat daily IAP revenue in USD, UTC. Transaction count is not payer count.")}>
             <ResponsiveContainer width="100%" height="100%"><LineChart data={d.payments.revenuecat?.daily}><CartesianGrid strokeDasharray="3 3" stroke="var(--border)" /><XAxis dataKey="date" tick={axisTick} /><YAxis tick={axisTick} /><Tooltip {...tipStyle} /><Line dataKey="revenue" name={text("內購收入", "IAP revenue")} stroke="#49a44c" dot={false} strokeWidth={2} /></LineChart></ResponsiveContainer>
           </ChartBox>
-          <Table rows={d.payments.revenuecat?.daily || []} columns={[{ key: "date", title: text("日期（UTC）", "Date (UTC)") }, { key: "revenue", title: text("內購收入", "IAP revenue"), format: "money", note: text("當天圖表收入（USD）。", "Chart revenue that day, in USD.") }, { key: "transactions", title: text("交易次數（非人數）", "Transactions (not users)"), note: text("交易筆數，同一人可有多筆。", "Transaction count. One person can have several.") }, { key: "incomplete", title: text("數據暫定", "Provisional"), note: text("true 表示當天圖表尚未結算。", "True means that chart day is not final.") }]} />
+          <Table rows={d.payments.revenuecat?.daily || []} columns={[{ key: "date", title: text("日期（UTC）", "Date (UTC)"), note: calc("RevenueCat chart cohort", "圖表的 UTC 日期。", "The chart cohort date in UTC.") }, { key: "revenue", title: text("內購收入", "IAP revenue"), format: "money", note: calc("RevenueCat Charts Revenue", "當天內購收入，USD。退款記在退款入帳日。排除廣告，以及 China、Hong Kong、Singapore。", "That day's IAP revenue in USD. Refunds are booked on the refund date. Ads and China, Hong Kong and Singapore are excluded.") }, { key: "transactions", title: text("交易次數（非人數）", "Transactions (not users)"), note: calc("RevenueCat Charts Transactions", "當天交易筆數，不是去重付費人數。同一顧客可以有多筆。", "Transaction count that day, not distinct payers. One customer can have several.") }, { key: "incomplete", title: text("數據暫定", "Provisional"), note: calc("RevenueCat Charts incomplete", "true 表示當天圖表尚未結算，金額之後可能改變。", "True means that chart day is not final and the amount can still change.") }]} />
         </> : <ChartBox title={text("每日分類收入", "Revenue by day and category")} note={text("每天的充值、禮包、訂閱與待歸類金額。", "Daily recharge, bundle, subscription and unclassified amounts.")}><ResponsiveContainer width="100%" height="100%"><BarChart data={d.daily}><CartesianGrid strokeDasharray="3 3" stroke="var(--border)" /><XAxis dataKey="date" tick={axisTick} /><YAxis tick={axisTick} /><Tooltip {...tipStyle} /><Legend /><Bar dataKey="recharge_revenue" name={text("充值頁", "Recharge")} stackId="revenue" fill="#49a44c" /><Bar dataKey="bundle_revenue" name={text("禮包", "Bundles")} stackId="revenue" fill="#f59e0b" /><Bar dataKey="subscription_revenue" name={text("訂閱", "Subscriptions")} stackId="revenue" fill="#818cf8" /><Bar dataKey="unknown_revenue" name={text("待歸類", "Unclassified")} stackId="revenue" fill="#94a3b8" /></BarChart></ResponsiveContainer></ChartBox>}
         <h3 className="mt-6 flex items-center font-semibold">{text("經濟流水", "Economy flows")}<Hint text={text("期間內的增減量，不是錢包餘額。", "Movement during the period, not a wallet balance.")} /></h3>
         <Grid>{Object.entries(d.economy).map(([key, value]) => <Card key={key} label={text(({ battery_charged: "電量獲得", battery_consumed: "電量消耗", coins_earned: "金幣獲得（完整流水）", coins_spent: "金幣消耗（完整流水）", reported_coin_rewards: "任務金幣獎勵回報量", ad_completions: "廣告完成回報次數", ad_forced: "強制廣告觸發回報次數", unlock_attempts: "解鎖嘗試回報次數", unlock_successes: "成功解鎖", balance_fails: "餘額不足回報次數" } as Record<string, string>)[key], key.replaceAll("_", " "))} value={value} note={economyNotes[key] ? text(economyNotes[key][0], economyNotes[key][1]) : undefined} />)}</Grid>
