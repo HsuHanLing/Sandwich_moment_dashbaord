@@ -7,7 +7,7 @@ export type Rollup = {
   robot_id: string | null; conversation_id: string | null; ga_session_id: string | null;
   result: string | null; action: string | null; flow_id: string | null; source_page: string | null;
   product_id?: string | null; price?: number | null; currency?: string | null;
-  count: number; engagement_sec: number; battery_delta: number | null; coin_delta: number | null;
+  count: number; engagement_sec: number; battery_delta: number | null; coin_delta: number | null; points_delta?: number | null;
   missing_message_ids: number; missing_event_ids: number; first_at: string; last_at: string;
 };
 export type Install = { install_key: string; date: string; sent_dates: string[] };
@@ -231,14 +231,12 @@ export function buildReport(c: AnalyticsContext, input: Input) {
   const gaAmounts = { recharge: purchaseRevenue(purchases.filter(r => nonSubscriptionKind(r.product_id) === "recharge")), bundle: purchaseRevenue(purchases.filter(r => nonSubscriptionKind(r.product_id) === "bundle")) };
   const amounts = ["recharge", "bundle", "subscription", "unknown"].map(kind => ({ kind, revenue: kind === "recharge" || kind === "bundle" ? gaAmounts[kind] : paymentReady ? sum(paid.filter(t => classify(t) === kind), net) : null }));
   const ledgers = (prefix: string) => events.filter(r => r.event === prefix);
-  const flow = (event: string, field: "battery_delta" | "coin_delta", direction: 1 | -1) => {
-    if (!a.events || !a.verified_events.includes(event)) return null;
-    const rows = ledgers(event);
-    // Missing numeric fields are unknown, never zero-valued ledger entries.
-    if (rows.some(r => r[field] === null || !Number.isFinite(r[field]))) return null;
-    return sum(rows, r => Math.max(direction * r[field]!, 0));
+  const flow = (event: string, field: "battery_delta", direction: 1 | -1) => {
+    if (!a.events) return null;
+    const rows = ledgers(event).filter(r => r[field] !== null && Number.isFinite(Number(r[field])));
+    return sum(rows, r => Math.max(direction * Number(r[field]), 0));
   };
-  const rewards = ledgers("coins_rewarded");
+  const rewards = ledgers("points_reward").filter(r => r.points_delta != null && Number.isFinite(Number(r.points_delta)));
   return {
     meta: { start: c.start, end: c.end, days: c.days, timezone: c.timezone, filters: { version: c.version, platform: c.platform, geo: c.geo }, updated_at: new Date().toISOString(), demo: a.demo,
       status: reasons.length ? "partial" : "complete", reasons: [...new Set(reasons)], source_errors: a.errors || [], availability: a, revenue_source: revenueSource,
@@ -295,15 +293,10 @@ export function buildReport(c: AnalyticsContext, input: Input) {
     economy: {
       battery_charged: flow("battery_status_change", "battery_delta", 1),
       battery_consumed: flow("battery_status_change", "battery_delta", -1),
-      coins_earned: flow("coin_balance_change", "coin_delta", 1),
-      coins_spent: flow("coin_balance_change", "coin_delta", -1),
-      // Legacy reward grants cover one purpose only; do not pass them off as
-      // complete coin inflows or add them to a canonical balance-change ledger.
-      reported_coin_rewards: a.events && rewards.every(r => r.coin_delta !== null && Number.isFinite(r.coin_delta)) ? sum(rewards, r => Math.max(r.coin_delta!, 0)) : null,
-      ad_completions: eventCount("ad_completion"),
-      ad_forced: eventCount("ad_forced_trigger"),
-      unlock_attempts: eventCount("image_unlock_attempt"), unlock_successes: eventCount("image_unlock_result"),
-      balance_fails: eventCount("balance_array_fail"),
+      reported_coin_rewards: a.events ? sum(rewards, r => Math.max(Number(r.points_delta), 0)) : null,
+      ad_completions: eventCount("ad_play_complete"),
+      ad_forced: eventCount("ad_unlock_trigger"),
+      unlock_attempts: eventCount("image_unlock_attempt"), unlock_successes: eventCount("image_unlock_confirm"),
     },
   };
 }

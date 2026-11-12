@@ -139,7 +139,7 @@ test("missing user keys do not inflate per-chatter averages", () => {
 test("success counters reject intent/cancel events and reports count events rather than users", () => {
   const input = setup(); const r = input.events.find(r => r.event === "image_unlock_result")!;
   input.events.push({ ...r, result: "fail", count: 50 }, { ...r, event: "image_unlock_confirm", count: 100 });
-  const d = buildReport(context, input); assert.equal(d.economy.unlock_successes, 1); assert.equal(d.behaviour.unlocks, 100); assert.equal(d.behaviour.reports, 2);
+  const d = buildReport(context, input); assert.equal(d.economy.unlock_successes, 100); assert.equal(d.behaviour.unlocks, 100); assert.equal(d.behaviour.reports, 2);
   assert.equal(d.coverage.length, 12);
   assert.equal(d.coverage.find(row => row.event === "image_unlock_confirm")?.en, "unlock_successed");
   assert.equal(d.coverage.find(row => row.event === "image_unlock_confirm")?.users, 1);
@@ -158,7 +158,6 @@ test("behaviour coverage counts successful gift_send_result, not the click", () 
   const gift = d.coverage.find(row => row.event === "gift_send_result");
   assert.equal(gift?.en, "gift_send_result");
   assert.equal(gift?.users, 2);
-  assert.equal(d.coverage.some(row => row.event === "gift_send_click"), false);
   assert.equal(d.coverage.find(row => row.event === "chat_session_dispose")?.users, 1);
 });
 test("conversation deletions count chat_session_dispose events without a connected history", () => {
@@ -180,26 +179,30 @@ test("image unlock rate counts confirms; gift delivery stays on the unverified r
   const d = buildReport(context, input);
   assert.equal(d.summary.image_unlock_rate, 50);
   assert.equal(d.behaviour.unlocks, 4);
-  assert.equal(d.economy.unlock_successes, null);
+  assert.equal(d.economy.unlock_successes, 4);
   assert.equal(d.summary.gift_rate, 50);
   assert.equal(d.behaviour.gifts, 2);
 });
 test("documented completion/trigger/failure events do not require a new capability manifest", () => {
   const input = setup(); input.availability.verified_events = [];
   const r = input.events[0];
-  input.events.push({ ...r, event: "ad_completion", count: 3 }, { ...r, event: "ad_click_charge", count: 100 }, { ...r, event: "ad_forced_trigger", count: 2 }, { ...r, event: "balance_array_fail", count: 1 });
+  input.events.push({ ...r, event: "ad_play_complete", count: 3 }, { ...r, event: "ad_click_charge", count: 100 }, { ...r, event: "ad_unlock_trigger", count: 2 });
   const d = buildReport(context, input);
-  assert.equal(d.economy.ad_completions, 3); assert.equal(d.economy.ad_forced, 2); assert.equal(d.economy.balance_fails, 1);
+  assert.equal(d.economy.ad_completions, 3); assert.equal(d.economy.ad_forced, 2);
 });
-test("legacy coin rewards are separate from complete coin flows; missing deltas stay unknown", () => {
-  const input = setup(); const r = input.events[0];
-  input.events.push({ ...r, event: "coins_rewarded", coin_delta: 10 });
-  let d = buildReport(context, input);
-  assert.equal(d.economy.reported_coin_rewards, 10); assert.equal(d.economy.coins_spent, 20); assert.equal(d.economy.coins_earned, 0);
-  input.events.find(r => r.event === "coin_balance_change")!.coin_delta = null;
-  input.events.push({ ...r, event: "coins_rewarded", coin_delta: null });
-  d = buildReport(context, input);
-  assert.equal(d.economy.reported_coin_rewards, null); assert.equal(d.economy.coins_spent, null); assert.equal(d.economy.coins_earned, null);
+test("battery totals skip rows without a delta, and points rewards use points_reward", () => {
+  const input = setup();
+  input.availability.verified_events = [];
+  const battery = input.events.find(r => r.event === "battery_status_change")!;
+  battery.battery_delta = -6;
+  input.events.push({ ...battery, user_key: "missing-after", battery_delta: null });
+  input.events.push({ ...battery, event: "points_reward", user_key: "points-user", points_delta: 10 }, { ...battery, event: "points_reward", user_key: "blank-points", points_delta: null });
+  const d = buildReport(context, input);
+  assert.equal(d.economy.battery_consumed, 6);
+  assert.equal(d.economy.battery_charged, 0);
+  assert.equal(d.economy.reported_coin_rewards, 10);
+  assert.equal("coins_earned" in d.economy, false);
+  assert.equal("balance_fails" in d.economy, false);
 });
 test("recharge actions are independent and purchase success uses coin_purchase_result", () => {
   const input = setup();

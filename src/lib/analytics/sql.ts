@@ -39,7 +39,8 @@ export function eventQuery(table: string, identities?: string, aliases?: string)
       TIMESTAMP_MICROS(event_timestamp) AS occurred_at,
       COALESCE(SAFE_CAST(${param("engagement_time_msec")} AS FLOAT64),0)/1000 AS engagement_sec,
       SAFE_CAST(${param("battery_after")} AS FLOAT64)-SAFE_CAST(${param("battery_before")} AS FLOAT64) AS battery_delta,
-      SAFE_CAST(${param("coins_after")} AS FLOAT64)-SAFE_CAST(${param("coins_before")} AS FLOAT64) AS coin_delta
+      SAFE_CAST(${param("coins_after")} AS FLOAT64)-SAFE_CAST(${param("coins_before")} AS FLOAT64) AS coin_delta,
+      SAFE_CAST(${param("points_after")} AS FLOAT64)-SAFE_CAST(${param("points_before")} AS FLOAT64) AS points_delta
     FROM filtered
   ), events AS (
     SELECT * FROM normalized
@@ -54,7 +55,7 @@ export function eventQuery(table: string, identities?: string, aliases?: string)
   )
   SELECT
     ARRAY(SELECT AS STRUCT date,event,user_key,install_key,robot_id,conversation_id,ga_session_id,result,action,flow_id,source_page,product_id,price,currency,
-      COUNT(*) AS count, SUM(engagement_sec) AS engagement_sec, SUM(battery_delta) AS battery_delta, SUM(coin_delta) AS coin_delta,
+      COUNT(*) AS count, SUM(engagement_sec) AS engagement_sec, SUM(battery_delta) AS battery_delta, SUM(coin_delta) AS coin_delta, SUM(points_delta) AS points_delta,
       COUNTIF(event='message_send' AND message_id IS NULL) AS missing_message_ids,
       COUNTIF(event_id IS NULL) AS missing_event_ids,
       CAST(MIN(occurred_at) AS STRING) AS first_at,CAST(MAX(occurred_at) AS STRING) AS last_at

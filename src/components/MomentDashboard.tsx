@@ -194,16 +194,18 @@ export function MomentDashboard() {
   ];
   const subscriptionNote = text("初購、續訂包含未打開 App 者；合計取聯集，比例可超過 100%。兩類人數不可直接相加。", "Includes initial purchases and renewals without an App visit. Total users are a union; ratios may exceed 100%.");
   const economyNotes: Record<string, [string, string]> = {
-    battery_charged: ["埋點：battery_status_change\n計算：sum(battery_delta) WHERE battery_delta > 0", "Event: battery_status_change\nCalculation: sum(battery_delta) WHERE battery_delta > 0"],
-    battery_consumed: ["埋點：battery_status_change\n計算：sum(abs(battery_delta)) WHERE battery_delta < 0", "Event: battery_status_change\nCalculation: sum(abs(battery_delta)) WHERE battery_delta < 0"],
-    coins_earned: ["埋點：coin_balance_change\n計算：sum(coin_delta) WHERE coin_delta > 0", "Event: coin_balance_change\nCalculation: sum(coin_delta) WHERE coin_delta > 0"],
-    coins_spent: ["埋點：coin_balance_change\n計算：sum(abs(coin_delta)) WHERE coin_delta < 0", "Event: coin_balance_change\nCalculation: sum(abs(coin_delta)) WHERE coin_delta < 0"],
-    reported_coin_rewards: ["埋點：coins_rewarded\n計算：sum(delta)\n不含購買入帳。", "Event: coins_rewarded\nCalculation: sum(delta)\nPurchases are not included."],
-    ad_completions: ["埋點：ad_completion\n計算：count(ad_completion)", "Event: ad_completion\nCalculation: count(ad_completion)"],
-    ad_forced: ["埋點：ad_forced_trigger\n計算：count(ad_forced_trigger)", "Event: ad_forced_trigger\nCalculation: count(ad_forced_trigger)"],
+    battery_charged: ["埋點：battery_status_change\n計算：sum(battery_after - battery_before) WHERE battery_after IS NOT NULL AND 差值 > 0\n沒有 battery_after 的列排除。", "Event: battery_status_change\nCalculation: sum(battery_after - battery_before) WHERE battery_after IS NOT NULL AND delta > 0\nRows without battery_after are excluded."],
+    battery_consumed: ["埋點：battery_status_change\n計算：sum(battery_before - battery_after) WHERE battery_after IS NOT NULL AND 差值 > 0\n沒有 battery_after 的列排除。", "Event: battery_status_change\nCalculation: sum(battery_before - battery_after) WHERE battery_after IS NOT NULL AND delta > 0\nRows without battery_after are excluded."],
+    reported_coin_rewards: ["埋點：points_reward\n計算：sum(points_after - points_before) WHERE 差值 > 0", "Event: points_reward\nCalculation: sum(points_after - points_before) WHERE delta > 0"],
+    ad_completions: ["埋點：ad_play_complete\n計算：count(ad_play_complete)", "Event: ad_play_complete\nCalculation: count(ad_play_complete)"],
+    ad_forced: ["埋點：ad_unlock_trigger\n計算：count(ad_unlock_trigger)", "Event: ad_unlock_trigger\nCalculation: count(ad_unlock_trigger)"],
     unlock_attempts: ["埋點：image_unlock_attempt\n計算：count(image_unlock_attempt)", "Event: image_unlock_attempt\nCalculation: count(image_unlock_attempt)"],
-    unlock_successes: ["埋點：image_unlock_result\n計算：count(image_unlock_result) WHERE result = 'success'\n沒有這個事件時顯示 —。", "Event: image_unlock_result\nCalculation: count(image_unlock_result) WHERE result = 'success'\nShows — when that event is absent."],
-    balance_fails: ["埋點：balance_array_fail\n計算：count(balance_array_fail)", "Event: balance_array_fail\nCalculation: count(balance_array_fail)"],
+    unlock_successes: ["埋點：image_unlock_confirm\n計算：count(image_unlock_confirm)", "Event: image_unlock_confirm\nCalculation: count(image_unlock_confirm)"],
+  };
+  const economyLabels: Record<string, [string, string]> = {
+    battery_charged: ["電量獲得", "Battery charged"], battery_consumed: ["電量消耗", "Battery consumed"],
+    reported_coin_rewards: ["點數獎勵", "Points rewards"], ad_completions: ["廣告播放完成", "Ad plays completed"],
+    ad_forced: ["廣告解鎖觸發", "Ad unlock triggers"], unlock_attempts: ["解鎖嘗試", "Unlock attempts"], unlock_successes: ["成功解鎖", "Unlock confirms"],
   };
   const stats = (d: Data, health = false) => <>
     <Grid>
@@ -342,7 +344,7 @@ export function MomentDashboard() {
           <Table rows={d.payments.revenuecat?.daily || []} columns={[{ key: "date", title: text("日期（UTC）", "Date (UTC)"), note: calc("RevenueCat chart cohort", "圖表的 UTC 日期", "The chart cohort date in UTC") }, { key: "revenue", title: text("內購收入", "IAP revenue"), format: "money", note: calc("RevenueCat Charts Revenue", "sum(當天內購收入 USD)\n退款記在退款入帳日。排除廣告，以及 China、Hong Kong、Singapore。", "sum(that day's IAP revenue in USD)\nRefunds are booked on the refund date. Ads and China, Hong Kong and Singapore are excluded.") }, { key: "transactions", title: text("交易次數（非人數）", "Transactions (not users)"), note: calc("RevenueCat Charts Transactions", "count(交易)\n不是 count(distinct 付費顧客)。同一顧客可以有多筆。", "count(transactions)\nNot count(distinct paying customers). One customer can have several.") }, { key: "incomplete", title: text("數據暫定", "Provisional"), note: calc("RevenueCat Charts incomplete", "incomplete = true 表示當天尚未結算，金額之後可能改變。", "incomplete = true means that day is not final and the amount can still change.") }]} />
         </> : <ChartBox title={text("每日分類收入", "Revenue by day and category")} note={text("每天的充值、禮包、訂閱與待歸類金額。", "Daily recharge, bundle, subscription and unclassified amounts.")}><ResponsiveContainer width="100%" height="100%"><BarChart data={d.daily}><CartesianGrid strokeDasharray="3 3" stroke="var(--border)" /><XAxis dataKey="date" tick={axisTick} /><YAxis tick={axisTick} /><Tooltip {...tipStyle} /><Legend /><Bar dataKey="recharge_revenue" name={text("充值頁", "Recharge")} stackId="revenue" fill="#49a44c" /><Bar dataKey="bundle_revenue" name={text("禮包", "Bundles")} stackId="revenue" fill="#f59e0b" /><Bar dataKey="subscription_revenue" name={text("訂閱", "Subscriptions")} stackId="revenue" fill="#818cf8" /><Bar dataKey="unknown_revenue" name={text("待歸類", "Unclassified")} stackId="revenue" fill="#94a3b8" /></BarChart></ResponsiveContainer></ChartBox>}
         <h3 className="mt-6 flex items-center font-semibold">{text("經濟流水", "Economy flows")}<Hint text={text("期間內的增減量，不是錢包餘額。", "Movement during the period, not a wallet balance.")} /></h3>
-        <Grid>{Object.entries(d.economy).map(([key, value]) => <Card key={key} label={text(({ battery_charged: "電量獲得", battery_consumed: "電量消耗", coins_earned: "金幣獲得（完整流水）", coins_spent: "金幣消耗（完整流水）", reported_coin_rewards: "任務金幣獎勵回報量", ad_completions: "廣告完成回報次數", ad_forced: "強制廣告觸發回報次數", unlock_attempts: "解鎖嘗試回報次數", unlock_successes: "成功解鎖", balance_fails: "餘額不足回報次數" } as Record<string, string>)[key], key.replaceAll("_", " "))} value={value} note={economyNotes[key] ? text(economyNotes[key][0], economyNotes[key][1]) : undefined} />)}</Grid>
+        <Grid>{Object.entries(d.economy).map(([key, value]) => <Card key={key} label={text(economyLabels[key][0], economyLabels[key][1])} value={value} note={economyNotes[key] ? text(economyNotes[key][0], economyNotes[key][1]) : undefined} />)}</Grid>
       </>}</Panel>}
     </main>
   </div></RangeContext.Provider>;
