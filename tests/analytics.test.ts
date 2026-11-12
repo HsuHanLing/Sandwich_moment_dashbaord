@@ -143,18 +143,22 @@ test("success counters reject intent/cancel events and reports count events rath
   assert.equal(d.coverage.length, 12);
   assert.equal(d.coverage.find(row => row.event === "image_unlock_confirm")?.en, "unlock_successed");
   assert.equal(d.coverage.find(row => row.event === "image_unlock_confirm")?.users, 1);
-  assert.equal(d.coverage.some(row => ["image_unlock_attempt", "image_unlock_result", "gift_send_result"].includes(row.event)), false);
+  assert.equal(d.coverage.some(row => ["image_unlock_attempt", "image_unlock_result", "gift_send_click"].includes(row.event)), false);
 });
-test("gift clicks and conversation deletions stay in behaviour coverage without the verified-event list", () => {
+test("behaviour coverage counts successful gift_send_result, not the click", () => {
   const input = setup();
-  input.availability.verified_events = input.availability.verified_events.filter(e => e !== "gift_send_click" && e !== "chat_session_dispose");
+  input.availability.verified_events = input.availability.verified_events.filter(e => e !== "gift_send_result" && e !== "chat_session_dispose");
   const base = input.events[0];
   input.events.push(
-    { ...base, event: "gift_send_click", result: null, user_key: "gift-user", count: 4 },
+    { ...base, event: "gift_send_result", result: "fail", user_key: "failed-gift", count: 4 },
+    { ...base, event: "gift_send_result", result: "success", user_key: "gift-user", count: 1 },
     { ...base, event: "chat_session_dispose", result: null, user_key: "delete-user", count: 2 },
   );
   const d = buildReport(context, input);
-  assert.equal(d.coverage.find(row => row.event === "gift_send_click")?.users, 1);
+  const gift = d.coverage.find(row => row.event === "gift_send_result");
+  assert.equal(gift?.en, "gift_send_result");
+  assert.equal(gift?.users, 2);
+  assert.equal(d.coverage.some(row => row.event === "gift_send_click"), false);
   assert.equal(d.coverage.find(row => row.event === "chat_session_dispose")?.users, 1);
 });
 test("conversation deletions count chat_session_dispose events without a connected history", () => {

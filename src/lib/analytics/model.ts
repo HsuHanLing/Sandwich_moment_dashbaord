@@ -46,7 +46,7 @@ export const coverageSteps = [
   ["message_send", "發送訊息", "Message sent"], ["battery_status_change", "電量變化", "Energy changed"],
   ["virtual_profile_entry", "角色主頁", "Persona profile"], ["image_unlock_confirm", "成功解鎖", "unlock_successed"],
   ["gift_popup_open", "禮物列表", "Gift list"],
-  ["gift_item_click", "選擇禮物", "Gift selected"], ["gift_send_click", "點擊贈送", "Send gift clicked"],
+  ["gift_item_click", "選擇禮物", "Gift selected"], ["gift_send_result", "成功送禮", "gift_send_result"],
   ["chat_session_dispose", "刪除聊天框", "Conversation deleted"],
 ] as const;
 const successEvents = new Set(["image_unlock_result", "gift_send_result"]);
