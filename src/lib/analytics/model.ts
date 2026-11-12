@@ -49,7 +49,7 @@ export const coverageSteps = [
   ["gift_item_click", "選擇禮物", "Gift selected"], ["gift_send_click", "點擊贈送", "Send gift clicked"],
   ["chat_session_dispose", "刪除聊天框", "Conversation deleted"],
 ] as const;
-const successEvents = new Set(["image_unlock_result", "gift_send_result", "chat_session_dispose"]);
+const successEvents = new Set(["image_unlock_result", "gift_send_result"]);
 export const sum = <T,>(rows: T[], value: (r: T) => number) => rows.reduce((n, r) => n + value(r), 0);
 const unique = (values: (string | null | undefined)[]) => new Set(values.filter((v): v is string => Boolean(v))).size;
 export const ratio = (numerator: number, denominator: number): number | null => denominator > 0 ? numerator / denominator * 100 : null;
@@ -96,7 +96,7 @@ export function buildReport(c: AnalyticsContext, input: Input) {
   const events = input.events.filter(r => inRange(r.date, c));
   const users = (event?: string, rows = events) => unique(rows.filter(r => (!event || r.event === event) && valid(r)).map(r => r.user_key));
   const count = (event: string, rows = events) => sum(rows.filter(r => r.event === event && valid(r)), r => Number(r.count));
-  const supported = (event: string) => a.events && (a.verified_events.includes(event) || event === "gift_send_result" || (!successEvents.has(event) && event !== "gift_send_click"));
+  const supported = (event: string) => a.events && (a.verified_events.includes(event) || event === "gift_send_result" || !successEvents.has(event));
   const eventCount = (event: string, rows = events) => supported(event) ? count(event, rows) : null;
   const active = users();
   const eventUsers = (event: string) => new Set(events.filter(r => r.event === event && valid(r) && r.user_key).map(r => r.user_key!));
@@ -227,8 +227,8 @@ export function buildReport(c: AnalyticsContext, input: Input) {
     if (rows.some(r => usdPrice(r) === null)) return null;
     return Math.round(sum(rows, r => usdPrice(r)! * Number(r.count)) * 100) / 100;
   };
-  const isPack = (id: string | null | undefined) => /pack/i.test(id || "");
-  const gaAmounts = { recharge: purchaseRevenue(purchases.filter(r => !isPack(r.product_id))), bundle: purchaseRevenue(purchases.filter(r => isPack(r.product_id))) };
+  const nonSubscriptionKind = (id: string | null | undefined) => /first/i.test(id || "") ? "bundle" : /coin/i.test(id || "") ? "recharge" : "unknown";
+  const gaAmounts = { recharge: purchaseRevenue(purchases.filter(r => nonSubscriptionKind(r.product_id) === "recharge")), bundle: purchaseRevenue(purchases.filter(r => nonSubscriptionKind(r.product_id) === "bundle")) };
   const amounts = ["recharge", "bundle", "subscription", "unknown"].map(kind => ({ kind, revenue: kind === "recharge" || kind === "bundle" ? gaAmounts[kind] : paymentReady ? sum(paid.filter(t => classify(t) === kind), net) : null }));
   const ledgers = (prefix: string) => events.filter(r => r.event === prefix);
   const flow = (event: string, field: "battery_delta" | "coin_delta", direction: 1 | -1) => {

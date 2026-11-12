@@ -26,10 +26,29 @@ test("billing uses canonical RC customer sets, counts inactive renewals and excl
   assert.equal(r.subscriptions![0].initial_users, 1); assert.equal(r.subscriptions![0].renewal_users, 1); assert.equal(r.subscriptions![0].users, 1);
   assert.equal(r.subscriptions![0].purchases, 2); assert.equal(r.subscriptions![1].users, 0);
   assert.equal(r.products.length, 1); assert.equal(r.products[0].product_id, "week");
-  assert.equal(r.amounts[1].kind, "unknown"); assert.equal(r.amounts[1].revenue, 3.99);
+  assert.equal(r.amounts.find(a => a.kind === "recharge")?.revenue, 3.99);
+  assert.equal(r.amounts.find(a => a.kind === "bundle")?.revenue, 0);
+  assert.equal(r.amounts.find(a => a.kind === "subscription")?.revenue, 5.98);
+  assert.equal(r.amounts.find(a => a.kind === "unknown")?.revenue, 0);
   assert.ok(!JSON.stringify(r).includes("billing-customer")); assert.equal(r.missing.app_identity_mapping, true);
 });
 
+test("one-time products split into first-purchase packs, coin recharge, and unclassified", () => {
+  const { snapshot, chart } = setup();
+  snapshot.products.push(
+    { id: "first", app_id: "app1", store_identifier: "moment_firstpack", type: "consumable", subscription: null },
+    { id: "other", app_id: "app1", store_identifier: "sticker", type: "consumable", subscription: null },
+  );
+  const purchase = snapshot.purchases[0];
+  snapshot.purchases.push(
+    { ...purchase, id: "first-purchase", product_id: "first", store_purchase_identifier: "first-tx", revenue_in_usd: { currency: "USD", gross: 1.99 } },
+    { ...purchase, id: "other-purchase", product_id: "other", store_purchase_identifier: "other-tx", customer_id: "other-customer", original_customer_id: "other-customer", revenue_in_usd: { currency: "USD", gross: 0.99 } },
+  );
+  const day = chart.daily.find(d => d.date === "2026-11-05")!;
+  day.revenue = 6.97; day.transactions = 3; chart.revenue = 12.95;
+  const amounts = Object.fromEntries(summarizeBilling(snapshot, c, chart).amounts.map(a => [a.kind, a.revenue]));
+  assert.equal(amounts.recharge, 3.99); assert.equal(amounts.bundle, 1.99); assert.equal(amounts.unknown, 0.99); assert.equal(amounts.subscription, 5.98);
+});
 test("duplicate transactions deduplicate, but conflicting owners block a false payer count", () => {
   const { snapshot, chart } = setup(); snapshot.purchases.push({ ...snapshot.purchases[0] });
   assert.equal(summarizeBilling(snapshot, c, chart).payers, 2);

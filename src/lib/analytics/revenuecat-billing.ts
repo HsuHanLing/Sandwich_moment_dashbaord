@@ -75,7 +75,12 @@ export function summarizeBilling(snapshot: BillingSnapshot, c: AnalyticsContext,
     // required for the canonical payer/active-user ratios and recharge matching.
     payers: unique(all), arppu: unique(all) ? chart.revenue / unique(all) : null, subscription_users: unique(subs), subscriptions,
     products: [...new Set(subs.map(r => `${r.store}:${r.product}`))].map(key => { const list = subs.filter(r => `${r.store}:${r.product}` === key); return { product_id: list[0].product, store: list[0].store, period: list[0].period, users: unique(list), initial_users: unique(list.filter(r => r.type === "initial")), renewal_users: unique(list.filter(r => r.type === "renewal")), purchases: list.length, revenue: sum(list) }; }),
-    amounts: [{ kind: "subscription", revenue: sum(subs) }, { kind: "unknown", revenue: sum(all.filter(r => !r.subscription)) }],
+    amounts: (["recharge", "bundle", "subscription", "unknown"] as const).map(kind => ({ kind, revenue: sum(all.filter(r => {
+      if (r.subscription) return kind === "subscription";
+      if (/first/i.test(r.product)) return kind === "bundle";
+      if (/coin/i.test(r.product)) return kind === "recharge";
+      return kind === "unknown";
+    })) })),
     missing: { purchase_versions: true, purchase_pages: true, app_identity_mapping: true, product_periods: !periodReady },
   };
 }
